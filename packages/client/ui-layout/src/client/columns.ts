@@ -21,6 +21,34 @@ export const SIDEBAR_COLLAPSED = 56
  * LG breakpoint); a manual toggle below it re-expands over the squeezed center
  * (stores.ts narrowExpanded). */
 export const SIDEBAR_AUTO_COLLAPSE = 1024
+/** Compact cutoff (Material compact): phones in portrait. Below it the icon rail
+ * is dropped entirely and the sidebar only appears as an overlay drawer. */
+export const COMPACT_MAX = 600
+/** Expanded cutoff (Material expanded): tablets landscape and desktops. */
+export const EXPANDED_MIN = 840
+/** Landscape-phone height. A coarse-pointer frame this short stays compact even
+ * when its width clears EXPANDED_MIN (a 844×390 phone would otherwise solve as
+ * a desktop and leave the transcript a few lines tall). */
+export const SHORT_MAX = 480
+
+/** Shell tier driving data-layout; the only place breakpoint opinions live. */
+export type LayoutTier = 'compact' | 'medium' | 'expanded'
+
+/**
+ * Solve the shell tier from both axes.
+ * @param width - frame width in px.
+ * @param height - frame height in px.
+ * @param coarse - touch-primary pointer (the short-height rule never applies to
+ *   fine pointers, so desktop windows keep their layout at any height).
+ * @returns the tier; compact covers portrait phones and both orientations of a
+ *   landscape phone, medium portrait tablets, expanded everything desktop-sized.
+ */
+export function layoutTier(width: number, height: number, coarse: boolean): LayoutTier {
+  if (width < COMPACT_MAX) return 'compact'
+  if (coarse && height < SHORT_MAX) return 'compact'
+  if (width < EXPANDED_MIN) return 'medium'
+  return 'expanded'
+}
 /** Right column drag clamp floor. */
 export const RIGHTBAR_MIN = 300
 /** Maximum normal right panel width as a fraction of the frame. */

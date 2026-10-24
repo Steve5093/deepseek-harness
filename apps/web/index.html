@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- viewport-fit=cover enables env(safe-area-inset-*) (base.css) for notches
+         and the home indicator; interactive-widget=resizes-content makes Android
+         Chrome shrink the layout viewport for the on-screen keyboard instead of
+         overlaying it (iOS still needs the visualViewport fallback in AppFrame).
+         Never add maximum-scale/user-scalable: iOS ignores them and they would
+         block pinch zoom. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" media="(prefers-color-scheme: light)" />

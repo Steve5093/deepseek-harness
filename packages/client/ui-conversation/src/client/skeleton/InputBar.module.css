@@ -416,3 +416,28 @@
 .activity { display: flex; align-items: center; flex: none; }
 .activity:empty { display: none; }
 .activityExpanded { flex: 1; min-width: 0; }
+
+/* iOS Safari force-zooms the page whenever a focused text field computes below
+   16px, and the zoom sticks after blur — the composer being 14px is why tapping
+   it jumps the whole layout on a phone. Pin the draft to 16px on touch pointers
+   only: the Settings preference still wins above 16, and fine-pointer desktops
+   keep the 14px default untouched. */
+@media (pointer: coarse) {
+  .card {
+    font-size: max(16px, var(--dsh-content-font-size, 14px));
+  }
+}
+
+/* [davinci] 提示词润色按钮：右下角 ✦，弱化常态、主题色 hover（docs/13） */
+.polish {
+  background: none;
+  border: 0;
+  color: #7f8792;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 6px 5px;
+  flex: none;
+}
+.polish:hover { color: #8ab4f8; }
+.polish:disabled { opacity: 0.4; cursor: wait; }

@@ -30,6 +30,7 @@ class ResizeObserverStub {
 }
 
 let frameWidth: number
+let frameHeight: number
 let animationFrames: Map<number, FrameRequestCallback>
 let nextFrame: number
 let originalTitle: string
@@ -52,12 +53,22 @@ function flushFrames(): void {
   }
 }
 
-function resize(width: number): void {
+function resize(width: number, height = frameHeight): void {
   frameWidth = width
+  frameHeight = height
   act(() => {
     for (const observer of observers) if (!observer.disconnected) observer.fire()
     flushFrames()
   })
+}
+
+/** Touch-primary pointer (a phone): jsdom has no matchMedia unless stubbed. */
+function stubCoarsePointer(): void {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('pointer: coarse'), media: query, onchange: null,
+    addEventListener: () => undefined, removeEventListener: () => undefined,
+    addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
+  }))
 }
 
 function mountFrame(windowWidth = frameWidth) {
@@ -143,6 +154,7 @@ function drag(handle: Element, fromX: number, toX: number): void {
 beforeEach(() => {
   originalTitle = document.title
   frameWidth = 1920
+  frameHeight = 1080
   selectedSession = 's-test' as SessionId
   selectedSessionTitle = undefined
   workspacesReady = true
@@ -158,7 +170,7 @@ beforeEach(() => {
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => { animationFrames.delete(id) })
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({
-    width: frameWidth, height: 1080, top: 0, left: 0, right: frameWidth, bottom: 1080,
+    width: frameWidth, height: frameHeight, top: 0, left: 0, right: frameWidth, bottom: frameHeight,
     x: 0, y: 0, toJSON: () => ({}),
   }))
   // jsdom has no pointer capture. Each element retains the actual pointer id,
@@ -318,7 +330,10 @@ describe('AppFrame normal width concessions', () => {
     expect(instance.getSnapshot().layoutInfo).toMatchObject({ rightbarShown: true, rightbar: 864 })
     act(() => { instance.actions.closeRightbar() })
     resize(455)
-    expect(tracks(frame)).toEqual([56, 0])
+    // Below COMPACT_MAX the rail is gone: the sidebar track is zero and the
+    // centre owns the whole frame (columns.ts layoutTier → data-layout).
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(frame.getAttribute('data-layout')).toBe('compact')
     resize(1920)
     expect(tracks(frame)).toEqual([420, 0])
   })
@@ -676,5 +691,92 @@ describe('AppFrame frame measurement lifecycle', () => {
     act(() => { observer.fire(); flushFrames() })
     expect(instance.getSnapshot().layoutInfo.viewportWidth).toBe(1920)
     expect(animationFrames.size).toBe(0)
+  })
+
+  it('drops the rail and renders the sidebar as an overlay drawer on a phone', () => {
+    frameWidth = 390
+    frameHeight = 844
+    const { frame, instance, sidebarOwner } = mountFrame()
+    expect(frame.getAttribute('data-layout')).toBe('compact')
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(sidebarOwner()).toMatchObject({ collapsed: true, width: 0 })
+
+    act(() => { instance.actions.toggleSidebar() })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(true)
+    // The drawer is an overlay: the grid keeps its zero track.
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(sidebarOwner()).toMatchObject({ collapsed: false, width: 320 })
+
+    act(() => { frame.querySelector<HTMLElement>('[data-scrim]')!.click() })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(false)
+    expect(sidebarOwner()).toMatchObject({ collapsed: true, width: 0 })
+  })
+
+  it('closes the drawer on Escape and when the phone rotates to a wider tier', () => {
+    frameWidth = 390
+    frameHeight = 844
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(true)
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(false)
+
+    act(() => { instance.actions.toggleSidebar() })
+    resize(900, 420)
+    expect(frame.hasAttribute('data-drawer-open')).toBe(false)
+  })
+
+  it('reveals the conversation when a Session is picked from the drawer', () => {
+    frameWidth = 390
+    frameHeight = 844
+    const { frame, instance, rerenderFrame } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(true)
+
+    selectedSession = 's-other' as SessionId
+    rerenderFrame()
+
+    expect(frame.hasAttribute('data-drawer-open')).toBe(false)
+  })
+
+  it('closes the drawer when a sidebar panel row is tapped', () => {
+    frameWidth = 390
+    frameHeight = 844
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(true)
+
+    // Mirrors the sidebar: a panel row button wrapping the panellist slot.
+    const sidebarCol = frame.firstElementChild as HTMLElement
+    const panelRow = document.createElement('button')
+    const glyph = document.createElement('span')
+    glyph.setAttribute('data-slot', 'sidebar.panellist')
+    panelRow.appendChild(glyph)
+    sidebarCol.appendChild(panelRow)
+    act(() => { glyph.click() })
+
+    expect(frame.hasAttribute('data-drawer-open')).toBe(false)
+  })
+
+  it('treats a landscape phone (wide but short, touch) as compact', () => {
+    stubCoarsePointer()
+    frameWidth = 844
+    frameHeight = 390
+    const { frame } = mountFrame()
+    expect(frame.getAttribute('data-layout')).toBe('compact')
+    expect(tracks(frame)).toEqual([0, 0])
+  })
+
+  it('keeps the desktop layout for a short but fine-pointer window', () => {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false, media: '', onchange: null,
+      addEventListener: () => undefined, removeEventListener: () => undefined,
+      addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
+    }))
+    frameWidth = 1200
+    frameHeight = 390
+    const { frame } = mountFrame()
+    expect(frame.getAttribute('data-layout')).toBe('expanded')
+    expect(tracks(frame)).toEqual([280, 0])
   })
 })

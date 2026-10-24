@@ -1,5 +1,35 @@
 import { describe, expect, it } from 'vitest'
-import { clampWidth, computeColumns } from '../src/client/columns.ts'
+import { clampWidth, computeColumns, layoutTier } from '../src/client/columns.ts'
+
+describe('layoutTier', () => {
+  it('is compact for a phone in portrait', () => {
+    expect(layoutTier(390, 844, true)).toBe('compact')
+    expect(layoutTier(390, 844, false)).toBe('compact')
+  })
+
+  it('is compact for a landscape phone, where width alone would say desktop', () => {
+    expect(layoutTier(844, 390, true)).toBe('compact')
+    expect(layoutTier(915, 412, true)).toBe('compact')
+  })
+
+  it('never applies the short-height rule to fine pointers', () => {
+    // A desktop window can be short: it keeps the desktop tiers.
+    expect(layoutTier(1200, 390, false)).toBe('expanded')
+    expect(layoutTier(700, 390, false)).toBe('medium')
+  })
+
+  it('splits the remaining widths into medium and expanded', () => {
+    expect(layoutTier(600, 900, true)).toBe('medium')
+    expect(layoutTier(839, 900, true)).toBe('medium')
+    expect(layoutTier(840, 900, true)).toBe('expanded')
+    expect(layoutTier(1920, 1080, false)).toBe('expanded')
+  })
+
+  it('treats a tablet in landscape as expanded and in portrait as medium', () => {
+    expect(layoutTier(834, 1112, true)).toBe('medium')
+    expect(layoutTier(1112, 834, true)).toBe('expanded')
+  })
+})
 
 describe('clampWidth', () => {
   it('clamps into the range and rounds', () => {

@@ -15,11 +15,11 @@
  * shares — zero cordis or framework imports, zero self-made hooks.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
-import { CENTER_MIN, clampWidth, computeColumns, RIGHTBAR_DEFAULT_RATIO, RIGHTBAR_MAX_RATIO, RIGHTBAR_MIN, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT } from './columns.ts'
+import { CENTER_MIN, clampWidth, computeColumns, RIGHTBAR_DEFAULT_RATIO, RIGHTBAR_MAX_RATIO, RIGHTBAR_MIN, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, layoutTier } from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
@@ -117,6 +117,28 @@ function DragHandle(props: { side: 'sidebar' | 'rightbar'; left: number; onStart
   )
 }
 
+/**
+ * Reveal the conversation once the selected Session changes while the compact
+ * overlay drawer is open. Picking a row in the drawer *is* navigation on a
+ * phone: leaving the overlay up would hide the very Session that was chosen.
+ * Kept in its own component so the frame does not subscribe to session updates.
+ */
+function DrawerDismiss({ useSessions, active, onDismiss }: {
+  useSessions: AppFrameProps['useSessions']
+  active: boolean
+  onDismiss: () => void
+}) {
+  const selected = useSessions(state => Object.values(state.byId)
+    .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id)
+  const previous = useRef(selected)
+  useEffect(() => {
+    if (previous.current === selected) return
+    previous.current = selected
+    if (active) onDismiss()
+  }, [selected, active, onDismiss])
+  return null
+}
+
 /** The three-column frame (see module doc). */
 export function AppFrame({
   useStore,
@@ -129,6 +151,13 @@ export function AppFrame({
   const layoutInfo = useStore(state => state.layoutInfo)
   const frameRef = useRef<HTMLDivElement | null>(null)
   const viewport = layoutInfo.viewportWidth
+  // Touch-primary pointers re-solve landscape phones as compact (see
+  // columns.ts); fine pointers never take the short-height rule, so a desktop
+  // window keeps its layout at any height. jsdom/SSR have no matchMedia.
+  const coarse = useMemo(() => typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches, [])
+  const tier = layoutTier(viewport, layoutInfo.viewportHeight, coarse)
+  const compact = tier === 'compact'
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
   useLayoutEffect(() => {
@@ -138,8 +167,9 @@ export function AppFrame({
     let raf: number | null = null
     let disposed = false
     const measure = () => {
-      const width = el.getBoundingClientRect().width
-      if (width > 0) actions.setViewportWidth(width)
+      const box = el.getBoundingClientRect()
+      if (box.width > 0) actions.setViewportWidth(box.width)
+      if (box.height > 0) actions.setViewportHeight(box.height)
     }
     measure()
     const observer = new ResizeObserver(() => {
@@ -157,17 +187,42 @@ export function AppFrame({
     }
   }, [actions])
 
+  // iOS never resizes the layout viewport for the on-screen keyboard (Android
+  // Chrome does, via interactive-widget=resizes-content in index.html). Publish
+  // the visual viewport height so base.css can shrink the shell above the
+  // keyboard. Height only: iOS 26 mis-reports offsetTop and body translates
+  // break fixed descendants (WebKit 311821), so nothing is ever repositioned.
+  useEffect(() => {
+    const vv = window.visualViewport
+    // jsdom exposes a visualViewport stub without live geometry.
+    if (!vv || typeof vv.height !== 'number') return
+    const root = document.documentElement
+    const apply = () => { root.style.setProperty('--dsh-app-height', `${vv.height}px`) }
+    apply()
+    vv.addEventListener('resize', apply)
+    return () => {
+      vv.removeEventListener('resize', apply)
+      root.style.removeProperty('--dsh-app-height')
+    }
+  }, [])
+
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
-  const sidebarCollapsed = narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0
-  const sidebarPreference = sidebarCollapsed
+  // Compact drops the rail entirely: the grid track stays zero and narrowExpanded
+  // only means "the overlay drawer is open" (AppFrame.module.css .sidebarDrawer).
+  const drawerOpen = compact && layoutInfo.narrowExpanded
+  const sidebarCollapsed = compact
+    ? !drawerOpen
+    : narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0
+  const sidebarPreference = compact || sidebarCollapsed
     ? 0
     : layoutInfo.sidebar === 0 ? SIDEBAR_DEFAULT : layoutInfo.sidebar
   const rightbarPreference = layoutInfo.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO
   // Desktop reopen controls occupy the frame's shell.leading seat (macOS) or
   // the Windows caption row; neither platform keeps an icon rail.
   const darwin = document.documentElement.dataset.platform === 'darwin'
-  const collapsedWidth = darwin
-    || document.documentElement.hasAttribute('data-windows-titlebar') ? 0 : SIDEBAR_COLLAPSED
+  const collapsedWidth = compact
+    ? 0
+    : darwin || document.documentElement.hasAttribute('data-windows-titlebar') ? 0 : SIDEBAR_COLLAPSED
   // Opening on a narrow frame collapses the left sidebar. Eligibility must
   // include that space before the occupant's first shown report arrives.
   const normal = computeColumns(viewport, !layoutInfo.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference, collapsedWidth)
@@ -230,6 +285,32 @@ export function AppFrame({
   const onRightbarDrag = useCallback((dx: number) => {
     actions.setRightbar(rightbarBase.current - dx)
   }, [actions])
+  // Compact drawer dismissal: scrim tap, Escape, and the Android back gesture.
+  // Closing by back must not also navigate away, so opening pushes one history
+  // marker and the cleanup pops only the entry we own (a popstate close clears
+  // the flag first, so it never double-steps).
+  const closeDrawer = useCallback(() => { actions.setNarrowExpanded(false) }, [actions])
+  // A panel row in the drawer is navigation too: tapping the panel you are
+  // already on changes no state, so watch the click rather than the selection.
+  const handleSidebarClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    const row = event.target instanceof Element ? event.target.closest('button') : null
+    if (row !== null && row.querySelector('[data-slot="sidebar.panellist"]') !== null) closeDrawer()
+  }, [closeDrawer])
+  useEffect(() => {
+    if (!drawerOpen) return
+    let pushed = false
+    let closedByPop = false
+    try { history.pushState({ dshSidebarDrawer: true }, ''); pushed = true } catch { /* jsdom / sandboxed */ }
+    const onPop = () => { closedByPop = true; closeDrawer() }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') closeDrawer() }
+    window.addEventListener('popstate', onPop)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      window.removeEventListener('keydown', onKey)
+      if (pushed && !closedByPop) history.back()
+    }
+  }, [drawerOpen, closeDrawer])
   const productTitle = process.env.DSH_CLIENT_TITLE ?? t('brand.localBuild')
   // The rendered template lets the grid solve the squeeze natively: the centre
   // declares its protected minimum and the right column bids up to the clamped
@@ -239,10 +320,13 @@ export function AppFrame({
   // whole and was corrected two frames later — visible jitter. cols keeps only
   // the discrete decisions (track present, collapse state) and the drag base.
   const rightbarMax = cols.rightbar === 0 ? 0 : clampWidth(rightbarPreference, RIGHTBAR_MIN, viewport * RIGHTBAR_MAX_RATIO)
+  // Drawer width: most of the phone, never wider than the desktop default plus
+  // a thumb's reach. Only consulted while the compact drawer is open.
+  const drawerWidth = Math.min(320, Math.round(viewport * 0.86))
   const sidebar = useMemo(() => renderSlot('sidebar', {
     collapsed: sidebarCollapsed,
-    width: cols.sidebar,
-  }), [renderSlot, sidebarCollapsed, cols.sidebar])
+    width: drawerOpen ? drawerWidth : compact ? 0 : cols.sidebar,
+  }), [renderSlot, sidebarCollapsed, drawerOpen, drawerWidth, compact, cols.sidebar])
   const main = useMemo(() => (
     <MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} />
   ), [usePanelInfo, renderSlot])
@@ -253,7 +337,10 @@ export function AppFrame({
   // row (ui-sidebar). AppFrame.module.css publishes the matching
   // --dsh-frame-leading-clearance under the same collapsed condition.
   const leading = useMemo(() => renderSlot('shell.leading', {}), [renderSlot])
-  const leadingMounted = darwin && sidebarCollapsed
+  // On compact the seat is the only sidebar affordance (the rail is gone), but
+  // it is hidden while the drawer is open — the drawer has its own close toggle
+  // and the seat would cover it.
+  const leadingMounted = compact ? !drawerOpen : darwin && sidebarCollapsed
 
   return (
     <div
@@ -263,8 +350,10 @@ export function AppFrame({
         ...(document.documentElement.hasAttribute('data-windows-titlebar')
           ? { '--dsh-windows-sidebar-width': `${cols.sidebar}px` } : {}),
         gridTemplateColumns:
-          `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : CENTER_MIN}px, 1fr) minmax(0px, ${rightbarMax}px)`,
+          `${compact ? 0 : cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : CENTER_MIN}px, 1fr) minmax(0px, ${rightbarMax}px)`,
       }}
+      data-layout={tier}
+      data-drawer-open={drawerOpen || undefined}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-rightbar-collapsed={cols.rightbar === 0 || undefined}
       data-rightbar-fullscreen={layoutInfo.rightbarFullscreen || undefined}
@@ -277,7 +366,11 @@ export function AppFrame({
         useSessions={useSessions}
         usePanelInfo={usePanelInfo}
       />
-      <div className={css.sidebarCol}>
+      {compact && <DrawerDismiss useSessions={useSessions} active={drawerOpen} onDismiss={closeDrawer} />}
+      <div
+        className={drawerOpen ? `${css.sidebarCol} ${css.sidebarDrawer}` : css.sidebarCol}
+        onClick={compact && drawerOpen ? handleSidebarClick : undefined}
+      >
         {sidebar}
       </div>
       <>
@@ -286,6 +379,7 @@ export function AppFrame({
           {renderSlot('rightbar', { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 })}
         </RightbarColumn>
       </>
+      {drawerOpen && <div className={css.scrim} data-scrim aria-hidden onClick={closeDrawer} />}
       <div className={css.bottomRow} data-shell-bottom>
         {renderSlot('shell.bottom', {})}
       </div>
@@ -297,8 +391,9 @@ export function AppFrame({
           {leading}
         </div>
       )}
-      {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+      {/* The collapsed rail is fixed-width: no resize handle while closed, and
+          none in compact (the drawer is an overlay, not a track). */}
+      {!sidebarCollapsed && !compact && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
       {layoutInfo.rightbarShown && !layoutInfo.rightbarFullscreen && normal.rightbar > 0 && (
         <DragHandle side="rightbar" left={viewport - normal.rightbar} onStart={onRightbarStart} onDrag={onRightbarDrag} onEnd={onDragEnd} />
       )}

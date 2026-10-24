@@ -8,6 +8,42 @@ body,
   margin: 0;
 }
 
+/* Mobile shell height. dvh follows browser chrome (address bar) as it shows and
+   hides; --dsh-app-height is published by AppFrame from visualViewport because
+   iOS never resizes the layout viewport for the on-screen keyboard (Android
+   Chrome does, via interactive-widget=resizes-content in index.html). The
+   variable is height-only: iOS 26 mis-reports visualViewport.offsetTop, so the
+   shell is resized, never translated (WebKit 311821). */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: var(--dsh-app-height, 100dvh);
+  }
+}
+
+/* Notches and the home indicator, in all four orientations (a landscape phone
+   puts the inset on a side). Zero on every non-notched display, so desktop
+   geometry is unchanged. Requires viewport-fit=cover in index.html. */
+#root {
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+
+/* Rotating a phone must not inflate text; pull-to-refresh must not fight the
+   transcript's own scrolling. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@media (pointer: coarse) {
+  body {
+    overscroll-behavior-y: none;
+  }
+}
+
 body {
   font-family: var(
     --dsw-font-family,

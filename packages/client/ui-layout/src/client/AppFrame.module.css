@@ -288,3 +288,78 @@
 .overlayLayer > * {
   pointer-events: auto;
 }
+
+/* ---- Compact (phone) shell ------------------------------------------------
+ * data-layout="compact" comes from columns.ts layoutTier: every phone in
+ * portrait, and landscape phones too because their height falls under
+ * SHORT_MAX. The rail is gone; the sidebar only exists as an overlay drawer.
+ * Everything below is scoped to compact, so desktop keeps its exact geometry. */
+
+/* Pin the columns explicitly: while the drawer is open the sidebar is
+   absolutely positioned and no longer reserves column 1, so auto-placement
+   would pull the centre into the zero-width first track. */
+.frame[data-layout='compact'] .sidebarCol {
+  grid-column: 1 / 2;
+  grid-row: 1;
+}
+
+.frame[data-layout='compact'] .centerCol {
+  grid-column: 2 / 3;
+  grid-row: 1;
+}
+
+.frame[data-layout='compact'] .rightbarCol {
+  grid-column: 3 / 4;
+  grid-row: 1;
+}
+
+/* The sidebar affordance moves from the traffic-light band to the corner, and
+   the conversation header pads by the same band (88px = 8px inset + the two
+   28px controls + 8px gap + 8px air) so the title clears it. */
+.frame[data-layout='compact'] {
+  --dsh-frame-leading-clearance: 88px;
+}
+
+.frame[data-layout='compact'] .leadingSeat {
+  top: 8px;
+  left: 8px;
+}
+
+/* Overlay drawer: most of the phone, never wider than a comfortable thumb
+   reach. Slides in from the edge; the centre keeps its full width underneath. */
+.sidebarDrawer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 14;
+  width: min(320px, 86vw);
+  border-right: 0.5px solid var(--dsw-alias-border-l3);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.24);
+  animation: drawer-in 180ms var(--ds-ease-out, ease-out);
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 13;
+  background: rgb(0 0 0 / 0.32);
+  animation: scrim-in 180ms var(--ds-ease-out, ease-out);
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebarDrawer,
+  .scrim {
+    animation: none;
+  }
+}

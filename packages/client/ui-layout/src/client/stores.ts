@@ -5,7 +5,7 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { MainPanelId } from './service.ts'
 import {
-  clampWidth, RIGHTBAR_DEFAULT_RATIO, RIGHTBAR_MAX_RATIO, RIGHTBAR_MIN,
+  clampWidth, COMPACT_MAX, RIGHTBAR_DEFAULT_RATIO, RIGHTBAR_MAX_RATIO, RIGHTBAR_MIN,
   SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
 } from './columns.ts'
 
@@ -25,6 +25,8 @@ type LayoutInfo = {
   sidebar: number
   /** Last positive frame measurement; window width bootstraps the first render. */
   viewportWidth: number
+  /** Last positive frame height; drives the landscape-phone compact tier. */
+  viewportHeight: number
   narrowExpanded: boolean
   /**
    * Saved right panel width in px, or null before its first opening. Resizing
@@ -61,6 +63,8 @@ type LayoutActions = {
   setSidebar: (draft: LayoutState, px: number) => void
   toggleSidebar: (draft: LayoutState) => void
   setViewportWidth: (draft: LayoutState, width: number) => void
+  setViewportHeight: (draft: LayoutState, height: number) => void
+  setNarrowExpanded: (draft: LayoutState, expanded: boolean) => void
   setRightbar: (draft: LayoutState, px: number) => void
   openRightbar: (draft: LayoutState, track: boolean, fullscreen: boolean) => void
   closeRightbar: (draft: LayoutState) => void
@@ -82,6 +86,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       layoutInfo: {
         sidebar: SIDEBAR_DEFAULT,
         viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
         narrowExpanded: false,
         rightbar: null,
         rightbarShown: false,
@@ -115,10 +120,25 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       setViewportWidth: (d, width: number) => {
         if (d.layoutInfo.viewportWidth === width) return
         d.layoutInfo.rightbarInstant = false
-        if ((d.layoutInfo.viewportWidth < SIDEBAR_AUTO_COLLAPSE) !== (width < SIDEBAR_AUTO_COLLAPSE)) {
+        const wasNarrow = d.layoutInfo.viewportWidth < SIDEBAR_AUTO_COLLAPSE
+        if (wasNarrow !== (width < SIDEBAR_AUTO_COLLAPSE)) {
+          d.layoutInfo.narrowExpanded = false
+        }
+        // Entering or leaving the compact tier also drops the drawer: a phone
+        // rotated into landscape must not keep a portrait overlay open, and a
+        // desktop window narrowed past COMPACT_MAX starts from a closed drawer.
+        if ((d.layoutInfo.viewportWidth < COMPACT_MAX) !== (width < COMPACT_MAX)) {
           d.layoutInfo.narrowExpanded = false
         }
         d.layoutInfo.viewportWidth = width
+      },
+      setViewportHeight: (d, height: number) => {
+        if (d.layoutInfo.viewportHeight === height) return
+        d.layoutInfo.viewportHeight = height
+      },
+      setNarrowExpanded: (d, expanded: boolean) => {
+        d.layoutInfo.rightbarInstant = false
+        d.layoutInfo.narrowExpanded = expanded
       },
       setRightbar: (d, px: number) => {
         d.layoutInfo.rightbarInstant = false

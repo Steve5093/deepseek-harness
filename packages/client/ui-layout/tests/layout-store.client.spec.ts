@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLayoutStore } from '../src/client/stores.ts'
 import type { MainPanelId } from '../src/client/service.ts'
 
-beforeEach(() => { vi.stubGlobal('innerWidth', 1920) })
+beforeEach(() => {
+  vi.stubGlobal('innerWidth', 1920)
+  vi.stubGlobal('innerHeight', 1080)
+})
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('createLayoutStore', () => {
@@ -15,6 +18,7 @@ describe('createLayoutStore', () => {
       layoutInfo: {
         sidebar: 280,
         viewportWidth: 1920,
+        viewportHeight: 1080,
         narrowExpanded: false,
         rightbar: null,
         rightbarShown: false,
