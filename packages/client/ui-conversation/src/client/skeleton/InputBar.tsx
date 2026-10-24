@@ -321,6 +321,36 @@ export const InputBar = memo(function InputBar({
     if (!empty && !disabled && !machineBusy && !uploadsPending) keyboard.submit(primarySubmitMode, 'click')
   }
 
+  // [davinci] 提示词润色（2026-10-24 主脑需求，docs/13）：草稿发给达芬奇
+  // /api/polish（预设元提示词见 webchat._POLISH_SYSTEM），改写结果整体替换
+  // 草稿；本地补丁，上游更新时按本标记重放。
+  const [polishing, setPolishing] = useState(false)
+  const onPolish = (): void => {
+    const text = draft.trim()
+    if (!text || polishing || inputActions === undefined) return
+    setPolishing(true)
+    void (async () => {
+      try {
+        const r = await fetch('http://100.120.56.8:7800/api/polish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        })
+        const d = await r.json().catch(() => ({}) as { polished?: string; error?: string })
+        if (r.ok && typeof d.polished === 'string' && d.polished) {
+          inputActions.setDraft(d.polished)
+          showToast('已润色，检查无误后发送')
+        } else {
+          showToast(String(d.error ?? `润色失败 HTTP ${r.status}`))
+        }
+      } catch (e) {
+        showToast(`润色失败：${e instanceof Error ? e.message : String(e)}（需 webchat 在线）`)
+      } finally {
+        setPolishing(false)
+      }
+    })()
+  }
+
   // Claim ghost hint: rendered by CSS as generated content after the last
   // paragraph while the claim's args are blank (a hint implies a single-line
   // token draft). The translated per-command hint wins over the claim's own.
@@ -457,6 +487,21 @@ export const InputBar = memo(function InputBar({
             {input === undefined || sessionId === undefined ? null : <div className={activity ? css.activityExpanded : css.activity}>
               {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity })}
             </div>}
+            {/* [davinci] 提示词润色按钮：右下角、发送键左侧（docs/13） */}
+            {live && (
+              <Tooltip label="AI 润色提示词" side="top" delayMs={500}>
+                <button
+                  type="button"
+                  className={css.polish}
+                  aria-label="AI 润色提示词"
+                  disabled={polishing || empty}
+                  onMouseDown={keepFocus}
+                  onClick={onPolish}
+                >
+                  {polishing ? '…' : '✦'}
+                </button>
+              </Tooltip>
+            )}
             {interruptible && (
               <Tooltip label={t('input.stop')} shortcutKeys={stopKeys} side="top" delayMs={500} disabled={stop === undefined}>
                 <button
