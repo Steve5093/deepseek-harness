@@ -132,6 +132,13 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
   const [busy, setBusy] = useState<MessageId | null>(null)
   const [collapsed, setCollapsed] = useState(true)
   const listId = useId()
+  // [davinci] 待发送队列拖拽排序（2026-10-24 主脑需求，对齐 ZCode 体验）：
+  // 左侧手柄起拖，落在目标行上/下半区决定落点；提交一个 move 动作让 Host
+  // 重排 inbox.nextTurn（顺序即处理顺序），投影刷新带回新顺序。
+  const [dragId, setDragId] = useState<MessageId | null>(null)
+  const [dropAt, setDropAt] = useState<{ id: MessageId; before: boolean } | null>(null)
+  const dragArmed = useRef(false)
+  const dndEnabled = queueMutable && busy === null && editing === null && queue.length > 1
 
   useEffect(() => {
     if (rowCount === 0 && !collapsed) setCollapsed(true)
@@ -169,14 +176,6 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
       t('queue.editFailed'),
     )) setEditing(null)
   }
-
-  // [davinci] 待发送队列拖拽排序（2026-10-24 主脑需求，对齐 ZCode 体验）：
-  // 左侧手柄起拖，落在目标行上/下半区决定落点；提交一个 move 动作让 Host
-  // 重排 inbox.nextTurn（顺序即处理顺序），投影刷新带回新顺序。
-  const [dragId, setDragId] = useState<MessageId | null>(null)
-  const [dropAt, setDropAt] = useState<{ id: MessageId; before: boolean } | null>(null)
-  const dragArmed = useRef(false)
-  const dndEnabled = queueMutable && busy === null && editing === null && queue.length > 1
 
   const clearDrag = (): void => {
     dragArmed.current = false

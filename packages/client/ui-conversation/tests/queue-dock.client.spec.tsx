@@ -482,7 +482,7 @@ describe('QueueDock', () => {
       <QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />,
     )
     fireEvent.click(getByRole('button', { name: '2 条排队消息' }))
-    expect([...container.querySelectorAll('li')].map(item => item.textContent))
+    expect([...container.querySelectorAll('li')].map(item => item.textContent?.replace('⠿', '')))
       .toEqual(['第一条排队消息', 'image'])
     expect(container.querySelectorAll('button')).toHaveLength(7)
     expect(container.querySelectorAll('[aria-label="编辑排队消息"]')).toHaveLength(2)
@@ -492,6 +492,30 @@ describe('QueueDock', () => {
     expect((container.querySelectorAll('[aria-label="编辑排队消息"]')[1] as HTMLButtonElement).disabled).toBe(true)
     expect(container.querySelectorAll('[aria-label="编辑排队消息"]')[1]?.getAttribute('title'))
       .toBe('包含非文本内容，暂不支持编辑')
+  })
+
+  it('reorders by dragging a row above another and posts one move action', async () => {
+    const snap = snapshotWith([row('i-1', '第一条'), row('i-2', '第二条')])
+    const source = liveSession(snap)
+    const props = kitFor(snap)
+    const { container, getByRole, getAllByLabelText } = render(
+      <QueueDock {...props} useSession={source.useSession} useProjection={source.useProjection} />,
+    )
+    fireEvent.click(getByRole('button', { name: '2 条排队消息' }))
+    const rows = [...container.querySelectorAll('li')]
+    // jsdom has no DragEvent constructor, so carry dataTransfer on a plain Event.
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn() }
+    const drag = (target: Element, type: string, init: Record<string, unknown> = {}): void => {
+      fireEvent(target, Object.assign(new Event(type, { bubbles: true, cancelable: true }), { dataTransfer }, init))
+    }
+    fireEvent.mouseDown(getAllByLabelText('拖动调整发送顺序')[1]!)
+    drag(rows[1]!, 'dragstart')
+    drag(rows[0]!, 'dragover', { clientY: -1 })
+    drag(rows[0]!, 'drop')
+    await waitFor(() => {
+      expect(props.updateQueue).toHaveBeenCalledWith(iid('i-2'), { kind: 'move', before: iid('i-1') })
+    })
+    expect(props.updateQueue).toHaveBeenCalledTimes(1)
   })
 
   it('renders queued image thumbnails from durable references beside the text preview', async () => {
