@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { useEffect, useId, useMemo, useState } from 'react'
+import type { DragEvent as ReactDragEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -169,6 +170,54 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
     )) setEditing(null)
   }
 
+  // [davinci] 待发送队列拖拽排序（2026-10-24 主脑需求，对齐 ZCode 体验）：
+  // 左侧手柄起拖，落在目标行上/下半区决定落点；提交一个 move 动作让 Host
+  // 重排 inbox.nextTurn（顺序即处理顺序），投影刷新带回新顺序。
+  const [dragId, setDragId] = useState<MessageId | null>(null)
+  const [dropAt, setDropAt] = useState<{ id: MessageId; before: boolean } | null>(null)
+  const dragArmed = useRef(false)
+  const dndEnabled = queueMutable && busy === null && editing === null && queue.length > 1
+
+  const clearDrag = (): void => {
+    dragArmed.current = false
+    setDragId(null)
+    setDropAt(null)
+  }
+
+  const onRowDragStart = (rowId: MessageId) => (e: ReactDragEvent<HTMLLIElement>): void => {
+    if (!dndEnabled || !dragArmed.current) {
+      e.preventDefault()
+      return
+    }
+    setDragId(rowId)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', rowId)
+  }
+
+  const onRowDragOver = (rowId: MessageId) => (e: ReactDragEvent<HTMLLIElement>): void => {
+    if (dragId === null || dragId === rowId) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = e.currentTarget.getBoundingClientRect()
+    setDropAt({ id: rowId, before: e.clientY < rect.top + rect.height / 2 })
+  }
+
+  const commitDrop = async (): Promise<void> => {
+    const from = dragId
+    const at = dropAt
+    clearDrag()
+    if (from === null || at === null) return
+    const without = queue.filter(row => row.id !== from)
+    if (without.length === 0) return
+    const insertIdx = without.findIndex(row => row.id === at.id) + (at.before ? 0 : 1)
+    const follower = without[insertIdx]
+    const before = follower === undefined ? null : follower.id
+    // Already in that exact slot: the dragged row currently precedes the same follower.
+    const currentFollower = queue[queue.findIndex(row => row.id === from) + 1]?.id ?? null
+    if (before === currentFollower) return
+    await applyAction(from, { kind: 'move', before }, t('queue.moveFailed'))
+  }
+
   return (
     <div className={css.dock} data-queue-dock="">
       <div className={css.panel}>
@@ -195,8 +244,28 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
           {listVisible && queue.map((row) => {
             const attachments = queueAttachments(row.content)
             const text = textOf(row.content)
+            const rowDragging = dragId === row.id
+            const dropMark = dropAt?.id === row.id
+              ? (dropAt.before ? css.dropBefore : css.dropAfter)
+              : ''
             return (
-              <li key={row.id} className={css.row}>
+              <li
+                key={row.id}
+                className={`${css.row}${rowDragging ? ` ${css.rowDragging}` : ''}${dropMark ? ` ${dropMark}` : ''}`}
+                draggable={dndEnabled}
+                onDragStart={onRowDragStart(row.id)}
+                onDragOver={onRowDragOver(row.id)}
+                onDrop={(e) => { e.preventDefault(); void commitDrop() }}
+                onDragEnd={clearDrag}
+              >
+                {dndEnabled && (
+                  <span
+                    className={css.handle}
+                    title={t('queue.drag')}
+                    aria-label={t('queue.drag')}
+                    onMouseDown={() => { dragArmed.current = true }}
+                  >⠿</span>
+                )}
                 {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
                 {rowCount === 1 && <span className={css.lead} aria-hidden><IconQueueOutlineRegular /></span>}
                 {editing?.id === row.id

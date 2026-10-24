@@ -157,6 +157,30 @@ export class ReactLoopInbox implements InboxContract {
   }
 
   /**
+   * Move one pending message before another within its own list.
+   * @param messageId - identity of the pending message to move.
+   * @param beforeId - identity to land before; null appends to the end of
+   *   the moved message's own list.
+   * @returns whether the move happened.
+   */
+  move(messageId: MessageId, beforeId: MessageId | null): boolean {
+    const from = this.locate(messageId)
+    if (from === undefined) return false
+    const list = this.current()[from.target]
+    let insertAt: number
+    if (beforeId === null) {
+      insertAt = list.length - 1   // append: index into the list after self-removal
+    } else {
+      const to = this.locate(beforeId)
+      if (to === undefined || to.target !== from.target) return false
+      insertAt = to.index > from.index ? to.index - 1 : to.index
+    }
+    const [message] = this.splice(from.target, from.index, 1, [])
+    this.splice(from.target, insertAt, 0, [message])
+    return true
+  }
+
+  /**
    * Apply standard splice semantics and durably record the normalized result.
    * @param target - pending list to mutate.
    * @param start - splice position.

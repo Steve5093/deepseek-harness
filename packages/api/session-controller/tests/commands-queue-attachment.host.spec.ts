@@ -265,6 +265,39 @@ describe('Session queue commands', () => {
     },
   )
 
+  it('moves a queued item before a sibling, to the end, and refuses cross-list targets', async () => {
+    const { ctx, controller, agent, inbox } = await commandHarness()
+    const first = createUserMessage({ content: [{ type: 'text', text: 'first' }], source: { kind: 'user' } })
+    const second = createUserMessage({ content: [{ type: 'text', text: 'second' }], source: { kind: 'user' } })
+    const third = createUserMessage({ content: [{ type: 'text', text: 'third' }], source: { kind: 'user' } })
+    const step = createUserMessage({ content: [{ type: 'text', text: 'step' }], source: { kind: 'user' } })
+    inbox.append('next-turn', first)
+    inbox.append('next-turn', second)
+    inbox.append('next-turn', third)
+    inbox.append('next-step', step)
+
+    // 向前挪：third 移到 first 之前
+    await expect(controller.updateQueue({
+      sessionId: agent.id, itemId: third.id, action: { kind: 'move', before: first.id },
+    })).resolves.toEqual({ accepted: true })
+    expect(inbox.nextTurn).toEqual([third, first, second])
+    // before=null 追加到自己列表末尾
+    await expect(controller.updateQueue({
+      sessionId: agent.id, itemId: third.id, action: { kind: 'move', before: null },
+    })).resolves.toEqual({ accepted: true })
+    expect(inbox.nextTurn).toEqual([first, second, third])
+    // 跨列表目标与缺失身份都拒绝且不落任何变更
+    await expectFailure(controller.updateQueue({
+      sessionId: agent.id, itemId: first.id, action: { kind: 'move', before: step.id },
+    }), 'session/queue-item-not-found')
+    await expectFailure(controller.updateQueue({
+      sessionId: agent.id, itemId: MessageId('gone'), action: { kind: 'move', before: null },
+    }), 'session/queue-item-not-found')
+    expect(inbox.nextTurn).toEqual([first, second, third])
+    expect(inbox.nextStep).toEqual([step])
+    await ctx.fiber.dispose()
+  })
+
   it('removes the selected message before handing it to Agent steering', async () => {
     const { ctx, controller, agent, inbox, steer } = await commandHarness('continuable')
     const first = createUserMessage({

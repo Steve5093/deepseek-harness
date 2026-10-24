@@ -84,6 +84,15 @@ export interface Inbox {
   remove(messageId: MessageId): boolean
 
   /**
+   * Move one pending message before another within its own list.
+   * @param messageId - identity of the pending message to move.
+   * @param beforeId - identity to land before; null appends to the end of
+   *   the moved message's own list.
+   * @returns whether the move happened.
+   */
+  move(messageId: MessageId, beforeId: MessageId | null): boolean
+
+  /**
    * Apply standard splice semantics and durably record the normalized result.
    * @param target - pending list to mutate.
    * @param start - splice position.

@@ -172,6 +172,11 @@ export type QueueAction =
   }
   | { readonly kind: 'remove' }
   | { readonly kind: 'steer' }
+  | {
+    readonly kind: 'move'
+    /** Land the item before this pending sibling; null appends to the end of its own list. */
+    readonly before: MessageId | null
+  }
 
 /** One Session list entry. */
 export interface SessionSummary {

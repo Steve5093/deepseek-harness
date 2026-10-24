@@ -47,6 +47,21 @@ export function createInboxStub(): Inbox {
       pending[location.target].splice(location.index, 1)
       return true
     },
+    move(messageId, beforeId) {
+      const from = locate(messageId)
+      if (from === undefined) return false
+      let insertAt: number
+      if (beforeId === null) {
+        insertAt = pending[from.target].length - 1
+      } else {
+        const to = locate(beforeId)
+        if (to === undefined || to.target !== from.target) return false
+        insertAt = to.index > from.index ? to.index - 1 : to.index
+      }
+      const [message] = pending[from.target].splice(from.index, 1)
+      pending[from.target].splice(insertAt, 0, message)
+      return true
+    },
     splice(target, start, deleteCount, inserted) {
       return pending[target].splice(start, deleteCount, ...inserted)
     },
@@ -69,6 +84,7 @@ export function unsupportedInbox(): Inbox {
     prepend: rejectMutation,
     replace: rejectMutation,
     remove: rejectMutation,
+    move: rejectMutation,
     splice: rejectMutation,
   }
 }

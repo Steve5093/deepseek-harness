@@ -496,6 +496,18 @@ export class SessionCommandController {
         agent.inbox.remove(request.itemId)
         agent.steer(message)
         break
+      case 'move': {
+        // Reorder within the item's own pending list; the inbox projection
+        // refresh carries the new order to every attached client.
+        if (!agent.inbox.move(request.itemId, request.action.before)) {
+          throw new RemoteError(
+            'session/queue-item-not-found',
+            'queued item is no longer pending',
+            { itemId: request.itemId },
+          )
+        }
+        break
+      }
       /* v8 ignore next 2 -- closed-union exhaustiveness guard */
       default:
         assertNever(request.action, 'queue action')

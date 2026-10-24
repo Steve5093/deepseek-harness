@@ -251,3 +251,19 @@
   cursor: default;
   opacity: 0.45;
 }
+
+/* [davinci] 队列拖拽排序：左侧手柄 + 拖拽态 + 落点指示（docs/13） */
+.handle {
+  flex: none;
+  cursor: grab;
+  color: var(--dsh-fg-muted, #7f8792);
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 2px;
+  user-select: none;
+  touch-action: none;
+}
+.handle:hover { color: #8ab4f8; }
+.rowDragging { opacity: 0.45; }
+.dropBefore { box-shadow: inset 0 2px 0 0 #8ab4f8; }
+.dropAfter { box-shadow: inset 0 -2px 0 0 #8ab4f8; }
