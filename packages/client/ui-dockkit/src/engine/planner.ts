@@ -15,6 +15,7 @@
 import type {
   DockMode, DockZone, FloatRect, LayoutOp, LayoutState, PaneId, PaneNode, SplitId, TabId, TabRecord,
 } from '../contract/types.ts'
+import type { SplitAxis } from '../contract/types.ts'
 import { canSplit, clampSizes, FLOAT_DEFAULT_SIZE, zoneSplit } from './constraints.ts'
 import type { TabFactory } from './initial.ts'
 import { applyOp } from './operations.ts'
@@ -134,6 +135,7 @@ export function planSetMode(state: LayoutState, mode: DockMode): readonly Layout
  * @param mint - id source for the pane, split, and seeded tab.
  * @param paneId - pane to split; defaults to the active docked pane.
  * @param makePaneTab - builds the seeded tab; omit to leave the new pane empty.
+ * @param axis - orientation of the new split; defaults to a horizontal run.
  * @returns the operations, or none when the pane budget is spent.
  */
 export function planSplitPane(
@@ -141,6 +143,7 @@ export function planSplitPane(
   mint: Mint,
   paneId?: PaneId,
   makePaneTab?: TabFactory,
+  axis: SplitAxis = 'row',
 ): readonly LayoutOp[] {
   if (!canSplit(state)) return NOTHING
   const target = paneId ?? activeDockPaneId(state)
@@ -149,7 +152,7 @@ export function planSplitPane(
   const ops: LayoutOp[] = [{
     type: 'split',
     paneId: target,
-    axis: 'row',
+    axis,
     direction: 'after',
     newPaneId,
     newSplitId: mint('split'),

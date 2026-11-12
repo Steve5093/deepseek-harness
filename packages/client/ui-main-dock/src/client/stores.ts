@@ -13,9 +13,9 @@ import type {
   DockMode, DockZone, FloatRect, History, LayoutOp, LayoutState, Mint, PaneId, SplitId, TabId, TabRecord,
 } from '@deepseek-ai/dsh-client-ui-dockkit'
 import {
-  createInitialState, dockPaneIds, EMPTY_HISTORY, findTabPane, getPane, planDropTab, planFloatTab,
-  planOpenContent, planPlaceTab, planResizeSplit, planSetExpanded, planSetMode, planSettle,
-  planSplitPane, planUnfloatPane, record, replay, stepBack, stepForward,
+  canSplit, createInitialState, dockPaneIds, EMPTY_HISTORY, findTabPane, getPane, planDropTab,
+  planFloatTab, planOpenContent, planPlaceTab, planResizeSplit, planSetExpanded, planSetMode,
+  planSettle, planSplitPane, planUnfloatPane, record, replay, stepBack, stepForward,
 } from '@deepseek-ai/dsh-client-ui-dockkit'
 
 /** Main dock tab records: kind names the session, contentId carries the id. */
@@ -204,13 +204,21 @@ export function createMainDockStore(): EngineStoreHandle<MainDockState, MainDock
       splitPane: (d, paneId) => {
         const next = advance(d, (state, mint) => {
           const target = paneId ?? state.activePaneId
-          if (dockPaneIds(state).length >= 2) return []
+          if (!canSplit(state)) return []
           const source = getPane(state, target)
           if (source.tabs.length === 0) return []
           // An idle sibling tab fills the new pane; otherwise the split seeds
           // a blank placeholder, and the settle rule keeps the pane alive.
+          // The split axis alternates against the pane's parent split so the
+          // button walks the surface toward an even grid: a pane inside a
+          // horizontal run splits vertically, and a single pane splits
+          // horizontally.
           const moved = source.tabs.find(id => id !== source.activeTabId)
-          const ops = planSplitPane(state, mint, target)
+          const parent = Object.values(state.nodes).find(
+            node => node.kind === 'split' && node.children.includes(target),
+          )
+          const axis = parent?.kind === 'split' && parent.axis === 'row' ? 'column' : 'row'
+          const ops = planSplitPane(state, mint, target, undefined, axis)
           if (moved !== undefined) {
             const split = ops[0] as Extract<LayoutOp, { type: 'split' }>
             return [...ops, { type: 'moveTab', tabId: moved, toPaneId: split.newPaneId, index: 0 }]
@@ -230,11 +238,8 @@ export function createMainDockStore(): EngineStoreHandle<MainDockState, MainDock
         if (next !== d) Object.assign(d, next)
       },
       dropTab: (d, tabId, paneId, zone) => {
-        const next = advance(d, (state, mint, makeTab) => {
-          if (zone === 'top' || zone === 'bottom') return []
-          if (zone !== 'center' && dockPaneIds(state).length >= 2) return []
-          return planDropTab(state, mint, tabId, paneId, zone, makeTab)
-        }, () => {
+        const next = advance(d, (state, mint, makeTab) =>
+          planDropTab(state, mint, tabId, paneId, zone, makeTab), () => {
           throw new Error('main dock drop must never seed: a moved tab already carries its session')
         })
         if (next !== d) Object.assign(d, next)

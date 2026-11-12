@@ -15,6 +15,7 @@
 import type {
   DockMode, DockZone, FloatRect, LayoutOp, LayoutState, PaneId, SplitId, TabId,
 } from '../contract/types.ts'
+import type { SplitAxis } from '../contract/types.ts'
 import { canSplit } from './constraints.ts'
 import { createIdMinter, createInitialState, type IdMinter, type TabFactory } from './initial.ts'
 import {
@@ -145,8 +146,8 @@ export class DockController {
    * @param paneId - pane to split; defaults to the active docked pane.
    * @returns false when the docked grid is already at `MAX_DOCK_PANES`.
    */
-  splitPane(paneId?: PaneId): boolean {
-    return this.run(planSplitPane(this.state, this.mint, paneId, this.makePaneTab))
+  splitPane(paneId?: PaneId, axis?: SplitAxis): boolean {
+    return this.run(planSplitPane(this.state, this.mint, paneId, this.makePaneTab, axis))
   }
 
   /**

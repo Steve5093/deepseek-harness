@@ -8,7 +8,7 @@
  * `main.conversation` declaration).
  */
 import type { ReactNode } from 'react'
-import { DockSurface, canSplit, dockPaneIds } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { DockSurface, canSplit } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { LayoutState, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type {
   InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
@@ -53,8 +53,8 @@ export function MainDockSeat(props: MainDockSeatProps): ReactNode {
     <div className={css.root} data-main-dock="">
       <DockSurface
         state={layout}
-        canSplit={canSplit(layout) && dockPaneIds(layout).length < 2}
-        dropZones="horizontal"
+        canSplit={canSplit(layout)}
+        dropZones="edges"
         minPaneFraction={0.2}
         canCloseTab={tabId => canCloseMainTab(state, tabId)}
         intents={{

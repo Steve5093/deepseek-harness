@@ -54,12 +54,12 @@ describe('main dock store', () => {
     expect(blank?.contentId).toBe('blank:placeholder')
   })
 
-  it('refuses a third pane: the kit fixes one horizontal split', () => {
+  it('splits up to the four-pane cap and refuses a fifth', () => {
     const { instance, layout } = harness()
+    for (let i = 0; i < 3; i++) instance.actions.splitPane(layout().activePaneId)
+    expect(dockPaneIds(layout())).toHaveLength(4)
     instance.actions.splitPane(layout().activePaneId)
-    const before = dockPaneIds(layout()).length
-    instance.actions.splitPane(layout().activePaneId)
-    expect(dockPaneIds(layout())).toHaveLength(before)
+    expect(dockPaneIds(layout())).toHaveLength(4)
   })
 
   it('keeps the sole docked tab unclosable', () => {
@@ -118,10 +118,13 @@ describe('main dock store', () => {
     expect(dockedTabs).toContain(other)
     expect(dockedTabs).toHaveLength(2)
 
-    // Vertical zones are refused on this surface.
-    const before = dockPaneIds(layout()).length
+    // A vertical drop splits along the other axis; the emptied source pane
+    // merges away, so the net count holds while the tree grows a column split.
     instance.actions.dropTab(other, destPane, 'top')
-    expect(dockPaneIds(layout())).toHaveLength(before)
+    const dockedAfter = dockPaneIds(layout()).flatMap(id => getPane(layout(), id).tabs)
+    expect(dockedAfter).toContain(other)
+    const axes = Object.values(layout().nodes).flatMap(n => n.kind === 'split' ? [n.axis] : [])
+    expect(axes).toContain('column')
   })
 
   it('floats a tab back into the dock and survives resize/undo/redo', () => {
@@ -162,7 +165,7 @@ describe('main dock store', () => {
     const historyBefore = instance.getSnapshot().history.entries.length
     instance.actions.focusTab(Object.keys(layout().tabs)[0] as TabId)
     instance.actions.focusPane(paneId)
-    instance.actions.splitPane(paneId)
+    while (dockPaneIds(layout()).length < 4) instance.actions.splitPane(layout().activePaneId)
     const afterFirst = instance.getSnapshot().history.entries.length
     instance.actions.splitPane(paneId)
     expect(instance.getSnapshot().history.entries.length).toBe(afterFirst)

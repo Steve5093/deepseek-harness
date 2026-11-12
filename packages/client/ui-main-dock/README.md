@@ -30,7 +30,7 @@ The split tree, its planners, the drag gestures, and the floating panels belong 
 <a id="tabs-and-panes"></a>
 ## Tabs and panes
 
-One tab per Session, addressed by `contentId` = `session:<SessionId>`. Opening a Session that already has a tab focuses it instead of seating a second one. At most two docked panes: the split control hides once the surface holds two, and edge drops that would create a third pane are refused. The last docked tab never closes, so the column always shows a conversation.
+One tab per Session, addressed by `contentId` = `session:<SessionId>`. Opening a Session that already has a tab focuses it instead of seating a second one. At most four docked panes: the split control hides once the surface holds four, and edge drops onto a pane's top or bottom split it vertically. The last docked tab never closes, so the column always shows a conversation.
 
 <a id="session-binding"></a>
 ## Session binding
@@ -57,6 +57,6 @@ The dock changes only how conversations are laid out and driven, never what a tu
 
 - **No per-pane conversation header.** The shadowing entry cannot render `conversation.header`, which the upstream entry declares; tab chips carry the Session title instead.
 - **Tab titles are captured at open time.** A Session rename does not refresh the chip until the tab is reopened.
-- **Two docked panes is the kit's architectural cap.** `DockLayout` asserts exactly one horizontal split with two cells; a third pane needs a ui-dockkit change, and a third concurrent Session runs by switching tabs.
+- **Four docked panes is the kit's cap (`MAX_DOCK_PANES`).** The docked surface uses `DockSurface`/`PaneTree`, which renders nested row/column splits; `planSplitPane` takes an axis argument and the store alternates it against the pane's parent split, so repeated split clicks walk toward a 2x2 grid. Vertical splits also arrive through top/bottom edge drops. The stable-container guarantee belongs to `DockLayout`/`TabLayout`, which this package does not use.
 - **Parallel same-cwd tool runs are verified safe.** Two sessions writing the same file race last-writer-wins with no byte interleaving; concurrent `>>` appends lose nothing; cross-editing anchors hold or fail loudly. Evidence and method: `conflict-lab/REPORT.md` in the davinci workspace (2026-11-12).
 - **Undo/redo is not wired to the UI.** The store records history for every intent, but no control exposes it yet.
