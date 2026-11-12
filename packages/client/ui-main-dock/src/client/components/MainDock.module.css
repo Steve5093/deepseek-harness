@@ -13,6 +13,11 @@
 }
 
 .tabBody {
+  /* The kit's pane body is a block box, so flex sizing does not reach the
+     conversation's flex column; an explicit height keeps the chat's
+     scrollBody (the [data-conversation-scroll] scroller ChatView binds to)
+     as the only scroll surface instead of the pane body stealing overflow. */
+  height: 100%;
   display: flex;
   flex-direction: column;
   min-width: 0;
