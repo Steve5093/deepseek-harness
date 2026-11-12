@@ -58,5 +58,5 @@ The dock changes only how conversations are laid out and driven, never what a tu
 - **No per-pane conversation header.** The shadowing entry cannot render `conversation.header`, which the upstream entry declares; tab chips carry the Session title instead.
 - **Tab titles are captured at open time.** A Session rename does not refresh the chip until the tab is reopened.
 - **Two docked panes is the kit's architectural cap.** `DockLayout` asserts exactly one horizontal split with two cells; a third pane needs a ui-dockkit change, and a third concurrent Session runs by switching tabs.
-- **Same-cwd parallel tool conflicts are unverified.** Multiple panes can issue tool calls into one directory; contention behavior is deferred to a later phase.
+- **Parallel same-cwd tool runs are verified safe.** Two sessions writing the same file race last-writer-wins with no byte interleaving; concurrent `>>` appends lose nothing; cross-editing anchors hold or fail loudly. Evidence and method: `conflict-lab/REPORT.md` in the davinci workspace (2026-11-12).
 - **Undo/redo is not wired to the UI.** The store records history for every intent, but no control exposes it yet.
