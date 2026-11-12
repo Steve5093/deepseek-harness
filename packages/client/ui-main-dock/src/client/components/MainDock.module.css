@@ -1,0 +1,27 @@
+/* The main column's docking surface and its session-tab bodies. */
+.root {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.root :global([data-dockkit-surface]) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.tabBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.unavailable {
+  padding: var(--dsw-space-4);
+  color: var(--dsw-color-text-secondary);
+  font-size: var(--dsw-font-size-sm);
+}

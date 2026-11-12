@@ -356,6 +356,10 @@
     - id: ui-workspace
       name: '@deepseek-ai/dsh-client-ui-workspace'
 
+    # Session-tabbed docking surface for the main conversation column.
+    - id: ui-main-dock
+      name: '@deepseek-ai/dsh-client-ui-main-dock'
+
     # Durable workflow lifecycle as an independent Chat node after the
     # existing generic workflow tool row.
     - id: ui-workflow-run
