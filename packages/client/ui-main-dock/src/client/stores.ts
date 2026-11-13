@@ -225,7 +225,7 @@ export function createMainDockStore(): EngineStoreHandle<MainDockState, MainDock
           }
           return planSplitPane(state, mint, target, id => ({
             id, kind: BLANK_TAB_KIND, contentId: BLANK_TAB_ADDRESS, title: '',
-          }))
+          }), axis)
         }, () => {
           throw new Error('main dock split must never seed a session tab')
         })

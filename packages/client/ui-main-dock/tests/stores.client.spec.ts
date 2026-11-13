@@ -62,6 +62,14 @@ describe('main dock store', () => {
     expect(dockPaneIds(layout())).toHaveLength(4)
   })
 
+  it('alternates the split axis against the parent split', () => {
+    const { instance, layout } = harness()
+    instance.actions.splitPane(layout().activePaneId)
+    instance.actions.splitPane(layout().activePaneId)
+    const axes = Object.values(layout().nodes).flatMap(n => n.kind === 'split' ? [n.axis] : [])
+    expect(axes).toEqual(['row', 'column'])
+  })
+
   it('keeps the sole docked tab unclosable', () => {
     const { instance, layout } = harness()
     const sole = Object.keys(layout().tabs)[0] as TabId
