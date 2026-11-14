@@ -336,12 +336,12 @@ export const InputBar = memo(function InputBar({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text }),
         })
-        const d = await r.json().catch(() => ({}) as { polished?: string; error?: string })
+        const d = (await r.json().catch(() => ({}))) as { polished?: string; error?: string }
         if (r.ok && typeof d.polished === 'string' && d.polished) {
           inputActions.setDraft(d.polished)
           showToast('已润色，检查无误后发送')
         } else {
-          showToast(String(d.error ?? `润色失败 HTTP ${r.status}`))
+          showToast(d.error ?? `润色失败 HTTP ${r.status}`)
         }
       } catch (e) {
         showToast(`润色失败：${e instanceof Error ? e.message : String(e)}（需 webchat 在线）`)
