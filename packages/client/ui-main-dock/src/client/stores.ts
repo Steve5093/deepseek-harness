@@ -9,6 +9,7 @@
  * sessions, and panes split tabs into side-by-side conversations.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type {
   DockMode, DockZone, FloatRect, History, LayoutOp, LayoutState, Mint, PaneId, SplitId, TabId, TabRecord,
 } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -182,13 +183,108 @@ function stepped(surface: MainDockState, step: HistoryStepper): MainDockState {
   return moved === undefined ? surface : { ...surface, layout: moved.state, history: moved.history }
 }
 
+/** Profile-key localStorage slot: one stable browser identity for server sync. */
+const PROFILE_KEY = 'dsh.client.profile.v1'
+
 /**
- * Create the main dock store handle.
+ * Read this browser's stable profile key, minting one on first use. The key
+ * identifies the client layout snapshot on the server; a wiped localStorage
+ * minting a fresh key simply starts a new sync lineage.
+ * @returns the stable profile key.
+ */
+export function clientProfileKey(): string {
+  try {
+    const existing = localStorage.getItem(PROFILE_KEY)
+    if (existing !== null && existing !== '') return existing
+    const minted = randomUUID()
+    localStorage.setItem(PROFILE_KEY, minted)
+    return minted
+  } catch {
+    // No storage (private mode): fall back to a per-session ephemeral key.
+    return `ephemeral-${randomUUID()}`
+  }
+}
+
+/**
+ * Cross-device reconcile: the union of both tab sets wins. Each side carries
+ * tabs the other lacks (a fresh device holds only its startup main view; the
+ * server holds every tab the profile last ran). The richer surface is the
+ * base; sessions unique to the other side are opened into it through the same
+ * planner path as a user click (so panes, history, and mint stay
+ * consistent); panes/splits/history of the losing side's shared tabs are not
+ * transplanted — their identity is what unions, not their arrangement.
+ * Handoff notices stay local.
+ */
+function mergeSurfaces(local: MainDockState, remote: MainDockState): MainDockState {
+  const sessionIds = (state: MainDockState): Set<string> =>
+    new Set(Object.values(state.layout.tabs)
+      .filter(tab => tab.kind === SESSION_TAB_KIND)
+      .map(tab => tab.contentId.slice(SESSION_TAB_KIND.length + 1)))
+  const titles = (state: MainDockState): Map<string, string> =>
+    new Map(Object.values(state.layout.tabs)
+      .filter(tab => tab.kind === SESSION_TAB_KIND)
+      .map(tab => [tab.contentId.slice(SESSION_TAB_KIND.length + 1), tab.title]))
+  const localSessions = sessionIds(local)
+  const remoteSessions = sessionIds(remote)
+  const onlyLocal = [...localSessions].filter(id => !remoteSessions.has(id))
+  const onlyRemote = [...remoteSessions].filter(id => !localSessions.has(id))
+  if (onlyLocal.length === 0 && onlyRemote.length === 0) {
+    return local.history.entries.length >= remote.history.entries.length ? local : remote
+  }
+  const base = localSessions.size >= remoteSessions.size ? local : remote
+  const baseTitles = titles(base)
+  const otherTitles = titles(base === local ? remote : local)
+  const opening = base === local ? onlyRemote : onlyLocal
+  let merged = base
+  for (const sessionId of opening) {
+    const title = baseTitles.get(sessionId) ?? otherTitles.get(sessionId) ?? sessionId
+    merged = advance(merged,
+      (state, mint) => planOpenSession(state, mint, sessionId, title).ops,
+      id => sessionTabFor(id, sessionId, title))
+  }
+  return merged.handoffNotice === local.handoffNotice
+    ? merged
+    : (local.handoffNotice === undefined
+      ? {
+        layout: merged.layout, history: merged.history, minted: merged.minted,
+        handoffNoticeSeq: local.handoffNoticeSeq,
+      }
+      : {
+        layout: merged.layout, history: merged.history, minted: merged.minted,
+        handoffNoticeSeq: local.handoffNoticeSeq, handoffNotice: local.handoffNotice,
+      })
+}
+
+/**
+ * Create the main dock store handle. The state persists whole to localStorage
+ * under one key, so a reload restores the open tabs and their pane arrangement
+ * verbatim; the service re-attaches Session retention once the catalog is
+ * ready. With a server-sync face supplied, the same state also syncs to the
+ * server per browser profile: the boot pull is merged with the local value
+ * (union of both sides' tabs), and debounced pushes keep other browsers' next
+ * boot current.
+ * @param sync - optional server-sync face (`ctx.remote.uiLayout` adapter).
  * @returns the handle (spec, type, identity, and factory in one).
  */
-export function createMainDockStore(): EngineStoreHandle<MainDockState, MainDockActions> {
+export function createMainDockStore(
+  sync?: {
+    pull(): Promise<MainDockState | undefined>
+    push(value: MainDockState): Promise<void>
+    merge?(local: MainDockState, remote: MainDockState): MainDockState
+  },
+): EngineStoreHandle<MainDockState, MainDockActions> {
   const handle = defineStore<MainDockState, MainDockActions>({
     init: createMainDockState,
+    persist: 'dsh.mainDock.v1',
+    ...(sync === undefined
+      ? {}
+      : {
+        sync: {
+          pull: sync.pull,
+          push: sync.push,
+          merge: mergeSurfaces,
+        },
+      }),
     actions: {
       openSession: (d, sessionId, title) => {
         const next = advance(d, (state, mint) => planOpenSession(state, mint, sessionId, title).ops,

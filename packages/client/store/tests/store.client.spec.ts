@@ -282,6 +282,70 @@ describe('defineStore', () => {
     }).create()
     expect(() => { inst.clearPersisted() }).not.toThrow()
   })
+
+  it('server sync pulls once at boot and replaces the initial value', async () => {
+    vi.useFakeTimers()
+    try {
+      const inst = defineStore<{ n: number }, { inc: (d: { n: number }) => void }>({
+        init: () => ({ n: 0 }),
+        sync: {
+          pull: async () => ({ n: 7 }),
+          push: async () => {},
+        },
+        actions: { inc: (d) => { d.n += 1 } },
+      }).create()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(inst.getSnapshot().n).toBe(7)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('server sync debounce-pushes local changes and keeps local on pull race', async () => {
+    vi.useFakeTimers()
+    try {
+      const pushes: Array<{ n: number }> = []
+      let resolvePull: ((value: { n: number } | undefined) => void) | undefined
+      const inst = defineStore<{ n: number }, { inc: (d: { n: number }) => void }>({
+        init: () => ({ n: 0 }),
+        sync: {
+          pull: () => new Promise<{ n: number } | undefined>((resolve) => { resolvePull = resolve }),
+          push: async (value) => { pushes.push(value) },
+        },
+        actions: { inc: (d) => { d.n += 1 } },
+      }).create()
+      inst.actions.inc()
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(pushes).toEqual([{ n: 1 }])
+      resolvePull?.({ n: 9 })
+      await vi.advanceTimersByTimeAsync(0)
+      // The pull raced a local change: the local value stays authoritative.
+      expect(inst.getSnapshot().n).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('server sync failures disable the sync without breaking the store', async () => {
+    vi.useFakeTimers()
+    try {
+      const inst = defineStore<{ n: number }, { inc: (d: { n: number }) => void }>({
+        init: () => ({ n: 0 }),
+        sync: {
+          pull: async () => { throw new Error('server down') },
+          push: async () => { throw new Error('server down') },
+        },
+        actions: { inc: (d) => { d.n += 1 } },
+      }).create()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(inst.getSnapshot().n).toBe(0)
+      inst.actions.inc()
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(inst.getSnapshot().n).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('shallowEqual', () => {

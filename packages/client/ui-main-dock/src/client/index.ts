@@ -25,7 +25,7 @@ import type {} from './contract/source.ts'
 import { MainDockSeat } from './components/MainDockSeat.tsx'
 import { SessionConversation, SessionTabBody } from './components/SessionTabBody.tsx'
 import { createMainDockService, type MainDockService } from './service.ts'
-import { createMainDockStore } from './stores.ts'
+import { createMainDockStore, clientProfileKey, type MainDockState } from './stores.ts'
 import { runHandoff } from './handoff.ts'
 import { en, zh } from './locales.ts'
 
@@ -40,7 +40,7 @@ export type { MainDockKey } from './locales.ts'
 const NS = 'mainDock'
 
 /** Required browser services. */
-export const inject = ['slots', 'locale', 'sessions', 'uiSession', 'uiWorkspace', 'commandUi']
+export const inject = ['slots', 'locale', 'sessions', 'uiSession', 'uiWorkspace', 'commandUi', 'remote.uiLayout']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -56,7 +56,25 @@ declare module '@deepseek-ai/cordis' {
  */
 export function apply(ctx: ClientContext): void {
   const sessions = ctx.get('sessions') as ISessions
-  const created = createMainDockStore()
+  const dockRemote = ctx.get('remote.uiLayout') as
+    | {
+      get(profile: string): Promise<{ document: MainDockState } | undefined>
+      set(profile: string, snapshot: { version: 1; document: MainDockState; updatedAt: string }): Promise<void>
+    }
+    | undefined
+  const created = createMainDockStore(dockRemote === undefined ? undefined : {
+    pull: async () => {
+      const snapshot = await dockRemote.get(clientProfileKey())
+      return snapshot?.document
+    },
+    push: async (value) => {
+      await dockRemote.set(clientProfileKey(), {
+        version: 1,
+        document: value,
+        updatedAt: new Date().toISOString(),
+      })
+    },
+  })
   const service = createMainDockService(ctx, sessions, created)
   // The framework mints the seat's root store instance at mount; adopt it so
   // the service writes the same instance the components read.
@@ -98,7 +116,7 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       store: storeHandle,
       children: {
-        'main.dock.tab.body': { kind: 'keyed', scope: 'session' },
+        'main.dock.tab.body': { kind: 'keyed', scope: 'session-maybe' },
       },
       inject: () => ({
         closeTab: (tabId: Parameters<MainDockService['closeTab']>[0]) => { service.closeTab(tabId) },

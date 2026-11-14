@@ -13,7 +13,7 @@ import {
  * Transient layout preferences. Responsive concessions never rewrite widths;
  * the right panel's expanded state belongs to its occupant.
  */
-type LayoutState = {
+export type LayoutState = {
   panelInfo: {
     /** Null selects the Conversation; global panels keep the current Session intact. */
     activePanelId: MainPanelId | null
@@ -76,10 +76,18 @@ type LayoutActions = {
  * default. The right panel initializes at 45% of the frame on first opening
  * and keeps that px preference across resizes and close. Drag writes clamp to
  * the current frame's range. Narrow sidebar toggles change only the expansion
- * override; opening the right panel clears that override.
+ * override; opening the right panel clears that override. The state persists
+ * under one key so a reload restores sidebar and right-panel geometry; AppFrame
+ * rewrites the viewport sizes it rehydrates stale on its first measurement.
+ * With a server-sync face supplied, the same state syncs to the server per
+ * browser profile (boot pull, debounced push).
+ * @param sync - optional server-sync face (`ctx.remote.uiLayout` adapter).
  * @returns the store handle (spec + type + identity + factory in one).
  */
-export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions>  {
+export function createLayoutStore(sync?: {
+  pull(): Promise<LayoutState | undefined>
+  push(value: LayoutState): Promise<void>
+}): EngineStoreHandle<LayoutState, LayoutActions>  {
   const handle = defineStore({
     init: (): LayoutState => ({
       panelInfo: { activePanelId: null },
@@ -95,6 +103,8 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         rightbarInstant: false,
       },
     }),
+    persist: 'dsh.layout.v1',
+    ...(sync === undefined ? {} : { sync }),
     actions: {
       selectPanel: (d, panelId: MainPanelId | null) => {
         d.panelInfo.activePanelId = panelId

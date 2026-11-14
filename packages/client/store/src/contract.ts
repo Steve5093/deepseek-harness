@@ -51,11 +51,28 @@ export type BakedActions<T, A extends ActionsDecl<T>> = {
 /**
  * Store declaration spec: initial-state factory (a lambda so every instance
  * gets a fresh state), optional persistence key (mechanical, framework-run),
- * and the actions write set.
+ * optional server-sync hooks (plugin-driven pull/push, engine-run), and the
+ * actions write set.
  */
 export interface StoreSpec<T, A extends ActionsDecl<T>> {
   init: () => T
   persist?: string
+  /**
+   * Durable server-sync wiring for root-scope layout state. `pull` resolves
+   * the server's current value (undefined when none); `push` persists one
+   * whole value; optional `merge` reconciles a server value with the current
+   * local one (its result replaces local). The engine pulls once per instance
+   * after the localStorage rehydration — without `merge` a server value
+   * replaces local, unless a local change raced the pull (local wins and
+   * pushes back); with `merge` the merged value always replaces local and
+   * pushes back. Local changes afterwards debounce-push; remote failures
+   * disable the timer without breaking the store.
+   */
+  sync?: {
+    pull(): Promise<T | undefined>
+    push(value: T): Promise<void>
+    merge?(local: T, remote: T): T
+  }
   actions: A
 }
 

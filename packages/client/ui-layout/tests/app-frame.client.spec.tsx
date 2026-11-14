@@ -152,6 +152,7 @@ function drag(handle: Element, fromX: number, toX: number): void {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   originalTitle = document.title
   frameWidth = 1920
   frameHeight = 1080

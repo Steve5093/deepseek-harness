@@ -12,6 +12,9 @@
       "path": "../../util/brand"
     },
     {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {
@@ -37,6 +40,9 @@
     },
     {
       "path": "../shortcuts/tsconfig.client.json"
+    },
+    {
+      "path": "../../util/crypto"
     }
   ]
 }

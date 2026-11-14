@@ -150,6 +150,10 @@
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 
+    # Durable browser UI-layout snapshot over Typert Remote.
+    - id: ui-layout-controller
+      name: '@deepseek-ai/dsh-api-ui-layout-controller'
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'

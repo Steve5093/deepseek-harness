@@ -8,14 +8,16 @@
  * presenter, which projects ctx.theme snapshots onto document.body.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { HostObservable, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { PanelInfo } from './service.ts'
 import { AppFrame } from './AppFrame.tsx'
-import { createLayoutStore } from './stores.ts'
+import { createLayoutStore, type LayoutState } from './stores.ts'
 import { LayoutController } from './service.ts'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { en, zh } from './shortcut-locales.ts'
@@ -147,7 +149,29 @@ export interface RightbarOwnerProps {
 }
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
-export const inject = ['slots', 'theme', 'locale', 'shortcuts']
+export const inject = ['slots', 'theme', 'locale', 'remote.uiLayout', 'shortcuts']
+
+/** Profile-key localStorage slot: one stable browser identity for server sync. */
+const LAYOUT_PROFILE_KEY = 'dsh.client.profile.v1'
+
+/**
+ * Read this browser's stable profile key, minting one on first use. The key
+ * identifies the client layout snapshot on the server; a wiped localStorage
+ * minting a fresh key simply starts a new sync lineage.
+ * @returns the stable profile key.
+ */
+function layoutProfileKey(): string {
+  try {
+    const existing = localStorage.getItem(LAYOUT_PROFILE_KEY)
+    if (existing !== null && existing !== '') return existing
+    const minted = randomUUID()
+    localStorage.setItem(LAYOUT_PROFILE_KEY, minted)
+    return minted
+  } catch {
+    // No storage (private mode): fall back to a per-session ephemeral key.
+    return `ephemeral-${randomUUID()}`
+  }
+}
 
 /**
  * Client plugin body: provide ctx.layout, then one register() call — AppFrame
@@ -160,7 +184,25 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind('shortcuts.layout')
 
   ctx.effect(() => {
-    const handle = createLayoutStore()
+    const layoutRemote = ctx.get('remote.uiLayout') as
+      | {
+        get(profile: string): Promise<{ document: LayoutState } | undefined>
+        set(profile: string, snapshot: { version: 1; document: LayoutState; updatedAt: string }): Promise<void>
+      }
+      | undefined
+    const handle = createLayoutStore(layoutRemote === undefined ? undefined : {
+      pull: async () => {
+        const snapshot = await layoutRemote.get(layoutProfileKey())
+        return snapshot?.document
+      },
+      push: async (value) => {
+        await layoutRemote.set(layoutProfileKey(), {
+          version: 1,
+          document: value,
+          updatedAt: new Date().toISOString(),
+        })
+      },
+    })
     const instance = handle.create()
     const store: typeof handle = { ...handle, create: () => instance }
     const retainMainPanels = (): void => {

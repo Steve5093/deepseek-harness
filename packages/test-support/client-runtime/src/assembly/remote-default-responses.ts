@@ -13,6 +13,10 @@ export const remoteDefaultResponses: RemoteTable = {
   unary: {
     // api-session-controller `sessions.handleConnected()` on `connection/reset`.
     'session/list': ok({ items: [] }),
+    // ui-layout and ui-main-dock boot pull; no snapshot exists in a fresh test browser.
+    'uiLayout/get': ok(undefined),
+    // Debounced layout pushes from either store; the default accepts and discards.
+    'uiLayout/set': ok(undefined),
     // ui-workspace startup with no entries; first-use initialization is ineligible.
     'workspace/initializeDefault': ok(undefined),
     // ui-settings `mirror.ensure()` at apply and again on `connection/reset`.

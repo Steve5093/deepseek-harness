@@ -133,10 +133,22 @@ export function createMainDockService(
 
   const sync = (): void => {
     const list = sessions.list.getSnapshot()
+    // Persistence rehydrates restored tabs before the catalog exists: until
+    // the list is ready every restore tab looks removed, so a pending-phase
+    // sync must neither close tabs nor retain sessions.
+    if (list.phase !== 'ready') return
     // Catalog removals close their tabs (the sole-docked-tab guard keeps one).
     for (const tab of tabs()) {
       const sessionId = sessionOfTab(tab.id)
       if (sessionId !== undefined && list.byId[sessionId] === undefined) closeTab(tab.id)
+    }
+    // Tabs restored from persistence carry layout but no retention: attach a
+    // mainDock reference to every session tab not yet retained.
+    for (const tab of tabs()) {
+      const sessionId = sessionOfTab(tab.id)
+      if (sessionId === undefined || retained.has(sessionId)) continue
+      retained.set(sessionId, sessions.retain(sessionId, { source: 'mainDock' }))
+      publishReference(tab.id)
     }
     // A new main-view selection opens (or focuses) its tab.
     const mainView = list.ids

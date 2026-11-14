@@ -230,6 +230,12 @@ export function defineStore<T, A extends ActionsDecl<T>>(
         const mutate = decl.actions[key] as (draft: T, ...params: unknown[]) => void
         actions[key] = (...params: unknown[]) => { store.update((draft) => { mutate(draft, ...params) }) }
       }
+      // Root-scope server sync: pull once (a server value replaces the
+      // localStorage rehydration — the server is the cross-device authority),
+      // then debounce-push local changes. Scoped instances never sync.
+      if (decl.sync !== undefined && scopeKey === undefined) {
+        attachServerSync(store, decl.sync)
+      }
       return {
         actions: actions as BakedActions<T, A>,
         getSnapshot: () => store.getSnapshot(),
@@ -247,4 +253,57 @@ export function defineStore<T, A extends ActionsDecl<T>>(
       }
     },
   }
+}
+
+/** Push latency: coalesce bursts of store writes into one server write. */
+const SERVER_SYNC_PUSH_DEBOUNCE_MS = 1500
+
+/**
+ * Wire one store instance to its server-sync hooks: one boot pull, then a
+ * debounced push per local change. Any pull/push failure disables the sync
+ * for this instance (the localStorage layer remains authoritative) — a
+ * server outage must never break the UI.
+ */
+function attachServerSync<T>(
+  store: SnapshotStore<T>,
+  sync: NonNullable<StoreSpec<T, ActionsDecl<T>>['sync']>,
+): void {
+  let broken = false
+  let sawLocalChange = false
+  let pushTimer: ReturnType<typeof setTimeout> | undefined
+  const schedulePush = (): void => {
+    sawLocalChange = true
+    if (broken || pushTimer !== undefined) return
+    pushTimer = setTimeout(() => {
+      pushTimer = undefined
+      void sync.push(store.getSnapshot()).catch(() => { broken = true })
+    }, SERVER_SYNC_PUSH_DEBOUNCE_MS)
+  }
+  void (async () => {
+    try {
+      const remote = await sync.pull()
+      if (broken || remote === undefined) return
+      if (sync.merge !== undefined) {
+        // A merge face declares local-vs-server reconciliation: the merged
+        // result replaces local even when the restore raced the pull (the
+        // restore's own writes must not erase what the server holds), and
+        // the merged value pushes back so the server reflects it.
+        const local = store.getSnapshot()
+        const merged = sync.merge(local, remote)
+        if (merged !== local) {
+          sawLocalChange = false
+          store.set(merged)
+        }
+        schedulePush()
+        return
+      }
+      // Without a merge face, a local change racing the pull means local is
+      // newer than the server read: keep the local value and let the
+      // debounce push it back out.
+      if (!sawLocalChange) store.set(remote)
+    } catch {
+      broken = true
+    }
+  })()
+  store.subscribe(schedulePush)
 }

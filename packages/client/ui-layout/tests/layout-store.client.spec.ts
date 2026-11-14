@@ -5,6 +5,7 @@ import { createLayoutStore } from '../src/client/stores.ts'
 import type { MainPanelId } from '../src/client/service.ts'
 
 beforeEach(() => {
+  localStorage.clear()
   vi.stubGlobal('innerWidth', 1920)
   vi.stubGlobal('innerHeight', 1080)
 })
@@ -29,15 +30,15 @@ describe('createLayoutStore', () => {
     })
   })
 
-  it('creates independent instances without browser persistence', () => {
+  it('persists geometry under one key and rehydrates a fresh instance', () => {
     const write = vi.spyOn(Storage.prototype, 'setItem')
-    const a = createLayoutStore().create()
-    const b = createLayoutStore().create()
-    a.actions.setSidebar(400)
-    a.actions.openRightbar(true, false)
-    expect(b.store.getSnapshot().layoutInfo.sidebar).toBe(280)
-    expect(b.store.getSnapshot().layoutInfo.rightbar).toBeNull()
-    expect(write).not.toHaveBeenCalled()
+    const first = createLayoutStore().create()
+    first.actions.setSidebar(400)
+    first.actions.openRightbar(true, false)
+    expect(write).toHaveBeenCalledWith('dsh.layout.v1', expect.any(String))
+    const second = createLayoutStore().create()
+    expect(second.store.getSnapshot().layoutInfo.sidebar).toBe(400)
+    expect(second.store.getSnapshot().layoutInfo).toMatchObject({ rightbarShown: true, rightbarTrack: true })
   })
 
   it('clamps the sidebar to 264–420px', () => {

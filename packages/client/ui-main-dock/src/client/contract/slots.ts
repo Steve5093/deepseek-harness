@@ -22,12 +22,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
-     * Keyed seat for one session tab's conversation body, under an explicit
-     * Session binding established by the dock's SessionProvider.
+     * Keyed seat for one session tab's conversation body. Session-maybe, not
+     * strict session: restored tabs render before the global session binding
+     * exists (the workspace startup restore is async), and a strict outlet
+     * would crash the whole dock; the body returns null until its keyed
+     * reference resolves, then establishes the explicit Session binding.
      */
     'main.dock.tab.body': {
       kind: 'keyed'
-      scope: 'session'
+      scope: 'session-maybe'
       keyProps: { session: { tabId: TabId } }
     }
     /**
