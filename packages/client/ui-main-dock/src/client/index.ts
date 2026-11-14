@@ -16,12 +16,17 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the `ctx.commandUi` Context merge (the command surface's
+// registration face) into this program — no runtime edge to ui-commands.
+import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from './contract/slots.ts'
 import type {} from './contract/source.ts'
 import { MainDockSeat } from './components/MainDockSeat.tsx'
 import { SessionConversation, SessionTabBody } from './components/SessionTabBody.tsx'
 import { createMainDockService, type MainDockService } from './service.ts'
 import { createMainDockStore } from './stores.ts'
+import { runHandoff } from './handoff.ts'
 import { en, zh } from './locales.ts'
 
 export type { MainDockInjected, MainDockTabBodyInjected } from './contract/slots.ts'
@@ -35,7 +40,7 @@ export type { MainDockKey } from './locales.ts'
 const NS = 'mainDock'
 
 /** Required browser services. */
-export const inject = ['slots', 'locale', 'sessions', 'uiSession', 'uiWorkspace']
+export const inject = ['slots', 'locale', 'sessions', 'uiSession', 'uiWorkspace', 'commandUi']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -65,6 +70,24 @@ export function apply(ctx: ClientContext): void {
   }
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-main-dock: dictionaries')
+
+  // The AI-handoff slash-menu entry: the composer's + button opens the same
+  // menu, so this row is the "+"-menu item the flow hangs on.
+  const t: TranslateNS<typeof NS> = ctx.locale.bind(NS)
+  const disposeHandoff = ctx.effect(() => ctx.commandUi.register({
+    name: 'handoff',
+    label: () => t('handoff.command'),
+    description: () => t('handoff.commandDescription'),
+    available: () => true,
+    ui: {
+      kind: 'action',
+      run: (session) => {
+        void runHandoff({ sessions, service, t }, session.sessionId).catch((error: unknown) => {
+          service.notifyHandoff(`${t('handoff.failed')}：${error instanceof Error ? error.message : String(error)}`)
+        })
+      },
+    },
+  }), 'ui-main-dock: handoff command')
 
   // The main seat: shadow the upstream Conversation at the conversation key.
   const disposeMain = ctx.slots.inject('main', function* () {
@@ -105,6 +128,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => () => {
     void disposeMain()
     void disposeBody()
+    void disposeHandoff()
     service.dispose()
   }, 'ui-main-dock: service faces')
 }

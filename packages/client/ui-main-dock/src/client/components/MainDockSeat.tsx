@@ -9,6 +9,7 @@
  */
 import type { ReactNode } from 'react'
 import { DockSurface, canSplit } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { LayoutState, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type {
   InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
@@ -51,6 +52,15 @@ export function MainDockSeat(props: MainDockSeatProps): ReactNode {
 
   return (
     <div className={css.root} data-main-dock="">
+      {/* Transient AI-handoff status line; the seq re-showing restarts the
+          fade cycle instead of reusing the faded banner. */}
+      {state.handoffNotice !== undefined && (
+        <Toast
+          key={state.handoffNotice.seq}
+          text={state.handoffNotice.text}
+          onDone={() => { actions.notifyHandoff(undefined) }}
+        />
+      )}
       <DockSurface
         state={layout}
         canSplit={canSplit(layout)}

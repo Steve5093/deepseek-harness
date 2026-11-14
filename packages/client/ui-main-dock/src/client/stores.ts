@@ -29,12 +29,23 @@ export const sessionRecord = (id: TabId, sessionId: string, title: string): TabR
 export const BLANK_TAB_KIND = 'blank'
 export const BLANK_TAB_ADDRESS = 'blank:placeholder'
 
+/** One transient handoff status line; the seat renders it as a Toast. */
+export interface HandoffNotice {
+  readonly seq: number
+  readonly text: string
+}
+
+
 /** One surface's plain state: layout, history, and the id counter position. */
 export interface MainDockState {
   readonly layout: LayoutState
   readonly history: History
   /** How many ids this surface has minted; carried so replay stays reproducible. */
   readonly minted: number
+  /** Latest handoff status line, or absent while nothing is reported. */
+  readonly handoffNotice?: HandoffNotice
+  /** Minted handoff-notice sequence, so re-showing restarts the Toast cycle. */
+  readonly handoffNoticeSeq: number
 }
 
 /** A planner call: surface and mint in, operations out. */
@@ -57,6 +68,7 @@ export function createMainDockState(): MainDockState {
     layout: { ...createInitialState({ next: counter.mint }), expanded: true },
     history: EMPTY_HISTORY,
     minted: counter.used(),
+    handoffNoticeSeq: 0,
   }
 }
 
@@ -75,7 +87,16 @@ function advance(surface: MainDockState, plan: SurfacePlan, makeTab: (id: TabId)
   const after = replay(surface.layout, planned)
   const settled = planSettle(after, counter.mint, after.expanded ? makeTab : undefined)
   const stepped = record(surface.history, surface.layout, [...planned, ...settled])
-  return { layout: stepped.state, history: stepped.history, minted: counter.used() }
+  const next: MainDockState = surface.handoffNotice === undefined
+    ? {
+      layout: stepped.state, history: stepped.history, minted: counter.used(),
+      handoffNoticeSeq: surface.handoffNoticeSeq,
+    }
+    : {
+      layout: stepped.state, history: stepped.history, minted: counter.used(),
+      handoffNoticeSeq: surface.handoffNoticeSeq, handoffNotice: surface.handoffNotice,
+    }
+  return next
 }
 
 /**
@@ -123,6 +144,8 @@ type MainDockActions = {
   setMode: (draft: MainDockState, mode: DockMode) => void
   undo: (draft: MainDockState) => void
   redo: (draft: MainDockState) => void
+  /** Publish (or clear with undefined) the transient handoff status line. */
+  notifyHandoff: (draft: MainDockState, text?: string) => void
 }
 
 /**
@@ -296,6 +319,18 @@ export function createMainDockStore(): EngineStoreHandle<MainDockState, MainDock
       redo: (d) => {
         const next = stepped(d, stepForward)
         if (next !== d) Object.assign(d, next)
+      },
+      notifyHandoff: (d, text) => {
+        if (text === undefined) {
+          if (d.handoffNotice === undefined) return
+          // The engine's draft is a mutable object; the store type keeps the
+          // field optional-readonly, so the clear goes through the same
+          // assign path every other action uses.
+          Object.assign(d, { handoffNotice: undefined })
+          return
+        }
+        const seq = d.handoffNoticeSeq + 1
+        Object.assign(d, { handoffNoticeSeq: seq, handoffNotice: { seq, text } })
       },
     },
   })

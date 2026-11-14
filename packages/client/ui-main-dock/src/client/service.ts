@@ -45,6 +45,8 @@ export interface MainDockService {
   closeTab(tabId: TabId): void
   /** Start a fresh Session through the workspace flow. */
   startSession(): void
+  /** Publish (or clear with undefined) the transient handoff status line. */
+  notifyHandoff(text?: string): void
   /** Dispose the service and release every retained Session. */
   dispose(): void
 }
@@ -153,11 +155,15 @@ export function createMainDockService(
       instance = next
       // Re-publish every live source against the new instance's layout.
       for (const tabId of references.keys()) publishReference(tabId)
+      // Tabs rehydrated from persistence have no retention yet; sync also
+      // guards the catalog sweep against the pending list.
+      sync()
     },
     openSession,
     referenceSource,
     closeTab,
     startSession: () => { ctx.uiWorkspace.startSession() },
+    notifyHandoff: (text) => { instance?.actions.notifyHandoff(text) },
     dispose: () => {
       disposeList()
       for (const sessionId of [...retained.keys()]) releaseReference(sessionId)

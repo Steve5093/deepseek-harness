@@ -24,10 +24,16 @@
       "path": "../ui-conversation/tsconfig.client.json"
     },
     {
+      "path": "../ui-commands"
+    },
+    {
       "path": "../ui-dockkit"
     },
     {
       "path": "../ui-layout"
+    },
+    {
+      "path": "../ui-primitives"
     },
     {
       "path": "../ui-session"
