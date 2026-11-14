@@ -23,6 +23,26 @@ const MAX_HISTORY_PAGES = 8
 /** The translate face the flow needs; typed to this package's keys. */
 export type HandoffTranslate = (key: MainDockKey) => string
 
+/**
+ * Derive the handoff child's title from the source session's title: reuse the
+ * fork numbering convention — an existing trailing `(n)` / `（n）` (half- or
+ * full-width) increments, otherwise ` (1)` is appended. Digits are exact, so
+ * `前端(9)` becomes `前端(10)`.
+ * @param title - the source session's display title (may be blank).
+ * @returns the numbered title for the new session.
+ */
+export function handoffChildTitle(title: string): string {
+  const ascii = /^(.*?)\((\d+)\)$/u.exec(title)
+  if (ascii?.[1] !== undefined && ascii?.[2] !== undefined) {
+    return `${ascii[1]}(${Number(ascii[2]) + 1})`
+  }
+  const fullWidth = /^(.*?)（(\d+)）$/u.exec(title)
+  if (fullWidth?.[1] !== undefined && fullWidth?.[2] !== undefined) {
+    return `${fullWidth[1]}（${Number(fullWidth[2]) + 1}）`
+  }
+  return `${title} (1)`
+}
+
 /** The services the handoff flow reads and writes. */
 export interface HandoffDeps {
   readonly sessions: ISessions
@@ -142,6 +162,18 @@ export async function runHandoff(deps: HandoffDeps, sessionId: SessionId): Promi
       // Seat the tab first: the retention write is synchronous, so the binding
       // is live by the time the prompt fires.
       service.openSession(newId)
+      // Number the child after its source ("前端" → "前端 (1)", "前端 (1)" →
+      // "前端 (2)"), so consecutive handoffs sort beside each other; failure
+      // only leaves the default projected title, which is not a flow failure.
+      const sourceTitle = info?.displayTitle ?? ''
+      if (sourceTitle !== '') {
+        const renamed = await sessions.using(newId, { source: 'mainDock' }, child =>
+          child.binding.session.rename(handoffChildTitle(sourceTitle)))
+        if (!renamed.ok) {
+          service.notifyHandoff(`${t('handoff.renameFailed')}：${renamed.error.message}`)
+          return
+        }
+      }
       const next = sessions.binding(newId)
       if (next === undefined) {
         service.notifyHandoff(t('handoff.sessionUnavailable'))

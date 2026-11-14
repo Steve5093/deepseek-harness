@@ -7,7 +7,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest'
 import type { ISessions, SessionEventLikeEntry } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { runHandoff, capTranscript, collectTranscript, type HandoffDeps } from '../src/client/handoff.ts'
+import { runHandoff, capTranscript, collectTranscript, handoffChildTitle, type HandoffDeps } from '../src/client/handoff.ts'
 import type { MainDockService } from '../src/client/service.ts'
 import { createMainDockStore } from '../src/client/stores.ts'
 
@@ -67,7 +67,13 @@ describe('collectTranscript', () => {
 
   it('returns an empty string when nothing qualifies', () => {
     expect(collectTranscript([
-      { type: 'transient', event: { type: 'assistant/live-chunk', seq: 1, time: 0, data: { attemptId: 'a', turn: 1, step: 1, chunk: { type: 'text', text: 'x' } } } } as unknown as SessionEventLikeEntry,
+      {
+        type: 'transient',
+        event: {
+          type: 'assistant/live-chunk', seq: 1, time: 0,
+          data: { attemptId: 'a', turn: 1, step: 1, chunk: { type: 'text', text: 'x' } },
+        },
+      } as unknown as SessionEventLikeEntry,
     ])).toBe('')
   })
 })
@@ -111,8 +117,27 @@ describe('notifyHandoff store action', () => {
   })
 })
 
+describe('handoffChildTitle', () => {
+  it('appends (1) to an unnumbered title', () => {
+    expect(handoffChildTitle('前端')).toBe('前端 (1)')
+  })
+
+  it('increments a half-width trailing number', () => {
+    expect(handoffChildTitle('前端(1)')).toBe('前端(2)')
+    expect(handoffChildTitle('前端(9)')).toBe('前端(10)')
+  })
+
+  it('increments a full-width trailing number in place', () => {
+    expect(handoffChildTitle('前端（1）')).toBe('前端（2）')
+  })
+
+  it('keeps a blank title blank-plus-suffix', () => {
+    expect(handoffChildTitle('')).toBe(' (1)')
+  })
+})
+
 describe('runHandoff flow', () => {
-  type Recorded = { readonly notice?: string; readonly newSessions: string[]; readonly prompts: string[] }
+  type Recorded = { readonly notice?: string; readonly newSessions: string[]; readonly prompts: string[]; readonly renames: string[] }
 
   /** Stub every dep runHandoff touches; fetch and notices are captured per test. */
   function stubDeps(over?: {
@@ -120,8 +145,9 @@ describe('runHandoff flow', () => {
     transcriptEmpty?: boolean
     fetchBody?: { status?: number; payload?: Record<string, unknown> | undefined; throw?: Error }
     promptFails?: boolean
+    renameFails?: boolean
   }): { deps: HandoffDeps; recorded: Recorded; fetches: string[] } {
-    const recorded: Recorded = { newSessions: [], prompts: [] }
+    const recorded: Recorded = { newSessions: [], prompts: [], renames: [] }
     const source = createSnapshotStore({ phase: 'ready' as const, ids: [], byId: {} })
     const sourceEvent = userEvent({})
     const entries = over?.transcriptEmpty === true ? [] : [entry(sourceEvent)]
@@ -131,6 +157,11 @@ describe('runHandoff flow', () => {
         eventSource: { getSnapshot: () => window, subscribe: () => () => {} },
         session: {
           loadOlder: async () => {},
+          rename: async (title: string) => {
+            recorded.renames.push(title)
+            if (over?.renameFails === true) return { ok: false, error: { message: 'rename refused' } } as never
+            return { ok: true, value: { title, seq: 1 } } as never
+          },
           prompt: async (content: readonly { readonly type: string; readonly text?: string }[]) => {
             recorded.prompts.push(content.map(part => part.type === 'text' ? part.text : '').join(''))
             if (over?.promptFails === true) return { ok: false, error: { message: 'refused' } } as never
@@ -145,13 +176,12 @@ describe('runHandoff flow', () => {
         using: async (
           target: unknown,
           _options: unknown,
-          operation: (reference: { ready: Promise<unknown>; binding: unknown }) => Promise<void>,
+          operation: (reference: { ready: Promise<unknown>; binding: unknown }) => unknown,
         ) => {
           if (over?.bindingGone !== true) {
-            await operation({ ready: Promise.resolve(), binding })
-          } else {
-            throw new Error('session acquisition failed')
+            return await operation({ ready: Promise.resolve(), binding })
           }
+          throw new Error('session acquisition failed')
         },
         create: async (opts?: { cwd?: string }) => {
           recorded.newSessions.push(opts?.cwd ?? '(none)')
@@ -176,13 +206,29 @@ describe('runHandoff flow', () => {
   }
 
   it('summarizes, creates a session with the same cwd, and prompts it', async () => {
-    const source = createSnapshotStore({ phase: 'ready' as const, ids: [], byId: { 's-one': { cwd: '/work/a' } } })
+    const source = createSnapshotStore({ phase: 'ready' as const, ids: [], byId: { 's-one': { cwd: '/work/a', displayTitle: 'OPC' } } })
     const { deps, recorded, fetches } = stubDeps()
     ;(deps.sessions as unknown as { list: typeof source }).list = source
     await runHandoff(deps, 's-one' as never)
     expect(recorded.newSessions).toEqual(['/work/a'])
     expect(recorded.prompts).toEqual(['SUMMARY'])
+    expect(recorded.renames).toEqual(['OPC (1)'])
     expect(JSON.parse(fetches[0]).transcript).toBe('【用户】hello')
+  })
+
+  it('aborts before prompting when the child rename is refused', async () => {
+    const source = createSnapshotStore({
+      phase: 'ready' as const,
+      ids: [],
+      byId: { 's-one': { cwd: '/work/a', displayTitle: '前端 (1)' } },
+    })
+    const { deps, recorded } = stubDeps({ renameFails: true })
+    ;(deps.sessions as unknown as { list: typeof source }).list = source
+    await runHandoff(deps, 's-one' as never)
+    expect(recorded.renames).toEqual(['前端 (2)'])
+    // The rename aborts before the prompt: no summary prompt was ever sent.
+    expect(recorded.prompts).toEqual([])
+    expect(recorded.notice).toBe('handoff.renameFailed：rename refused')
   })
 
   it('publishes the failure notice when the summarizer rejects', async () => {
