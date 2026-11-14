@@ -1,9 +1,11 @@
 import type {
-  AssistantChatData, AssistantMessageNode, ChatConversationViewNode, ChatNode, ChatSnapshot, ConversationNode,
+  AssistantChatData, AssistantMessageNode, ChatConversationViewNode, ChatNode, ChatNodeDataMap, ChatNodeKind, ChatSnapshot,
+  ConversationNode,
   ChatLocationNodeIndex, ChatNodeProcessSource, ChatNodeSource, ChatNodeStore,
   ChatTurnProcessPresentation, CompactionSummaryNode, FinalAssistantChatData, LegacyConversationSlice,
   PartialAssistant, RunningToolCall, ToolCallBlock, TurnNavigationItem,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
   ConversationLocationDataSource, ConversationLocationDataStore, ConversationTurnDataMap, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -104,6 +106,7 @@ class FixtureNodeStore implements ChatNodeStore {
   private byKey = new Map<string, ChatConversationViewNode>()
   private readonly turnProcesses = new ChatTurnProcessProjector()
   private readonly sources = new Map<string, FixtureSource<ChatConversationViewNode | undefined>>()
+  private readonly turnSources = new Map<string, FixtureSource<readonly ChatNodeDataMap[ChatNodeKind][]>>()
   private readonly processSources = new Map<string, FixtureSource<ChatTurnProcessPresentation | undefined>>()
   private readonly dirtyKeys = new Set<string>()
   private readonly dirtyProcessKeys = new Set<string>()
@@ -117,8 +120,15 @@ class FixtureNodeStore implements ChatNodeStore {
     return cachedSource(this.sources, key, () => new FixtureSource(() => this.get(key)))
   }
 
-  turnDataSource(): never {
-    throw new Error('turn collections require the real ChatSnapshotBuilder')
+  turnDataSource(turn: number, kind: ChatNodeKind): ObservableSnapshot<readonly ChatNodeDataMap[ChatNodeKind][]> {
+    return cachedSource(this.turnSources, `${turn}:${kind}`, () => new FixtureSource(() => {
+      const current = this.list.filter((node) => {
+        const location = node.location
+        return (location.kind === 'turn' || location.kind === 'step')
+          && location.turn.turn === turn && node.kind === kind
+      }).map(node => node.data as ChatNodeDataMap[ChatNodeKind])
+      return current
+    }))
   }
 
   processSource(key: string): ChatNodeProcessSource {

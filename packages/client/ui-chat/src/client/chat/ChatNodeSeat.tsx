@@ -21,6 +21,10 @@ interface ChatNodeSeatProps extends ChatNodeOwnerProps {
   readonly actions: ChatViewSlotProps['actions']
   readonly renderSlot: ChatViewSlotProps['renderSlot']
   readonly t: ChatViewSlotProps['t']
+  /** Session standard kit passed through to keyed node renderers. */
+  readonly useChat: ChatViewSlotProps['useChat']
+  readonly useInput: ChatViewSlotProps['useInput']
+  readonly inputActions: ChatViewSlotProps['inputActions']
 }
 
 type RoutedChatNodeOwner = {
@@ -46,6 +50,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation,
   cwd, openFile, openSkill, inspectCall, forkAt,
   loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
+  useChat, useInput, inputActions,
 }: ChatNodeSeatProps) {
   const node = useChatNode(nodeKey)
   const routedNode = node as ChatNode | undefined
@@ -141,7 +146,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   // Runtime dispatch owns the correlation: every Node's discriminant is the
   // keyed-slot entry passed alongside that same Node. TypeScript does not
   // distribute an object containing a union into a union of objects itself.
-  const routedOwner = { ...owner, node: routedNode } as RoutedChatNodeOwner
+  const routedOwner = { ...owner, node: routedNode, useChat, useInput, inputActions } as RoutedChatNodeOwner
   const flowKey = groupPart === undefined || groupPart === 'response' ? routedNode.key : JSON.stringify([routedNode.key, groupPart])
   return (
     <div

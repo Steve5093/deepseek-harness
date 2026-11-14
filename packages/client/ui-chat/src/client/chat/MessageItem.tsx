@@ -1,8 +1,8 @@
-import { Fragment, memo, useEffect, useMemo, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, projectUserText, StateDot, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { fileExtension, FileTypeIcon, fileSizeText, IconRefreshOutlineRegular, JsonBlock, projectUserText, StateDot, TextShimmer, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ModelRetryNode, TurnErrorNode, UserMessageNode } from '../contract/snapshot.ts'
 import { CompactionItem } from './CompactionItem.tsx'
@@ -127,16 +127,46 @@ function ModelRetryItem({ node, active, t }: {
 }
 
 /** Persistent, turn-positioned feedback for a terminal failure. */
-function TurnErrorItem({ node, t }: {
+function TurnErrorItem({ node, useChat, useInput, inputActions, t }: {
   node: TurnErrorNode
+  useChat: ChatViewSlotProps['useChat']
+  useInput: ChatViewSlotProps['useInput']
+  inputActions: ChatViewSlotProps['inputActions']
   t: ChatViewSlotProps['t']
 }) {
+  const draft = useInput(s => s.draft)
+  const phase = useInput(s => s.phase)
+  // The failed turn's own opening user message, resolved through the
+  // turn-kind index so a reload or fork keeps the pairing correct.
+  const userText = useChat((s) => {
+    const users = s.nodes.turnDataSource(node.turn, 'user').getSnapshot()
+    return users.length === 0 ? undefined : contentParts(users.at(-1)?.content ?? []).text
+  })
+  const disabled = phase === 'adjudicating' || phase === 'submitting' || userText === undefined
+  const onResend = useCallback(() => {
+    if (userText === undefined) return
+    // A non-empty draft means the composer holds unsent content — refuse
+    // instead of clobbering it; the user clears or sends it first.
+    if (draft.trim() !== '') return
+    inputActions.setDraft(userText)
+  }, [draft, inputActions, userText])
   return (
     <div className={css.turnErrorRow} role="status">
       <StateDot state="error" className={css.turnErrorDot} />
       <div className={css.turnErrorCopy}>
         <span className={css.turnErrorTitle}>{node.code === 'ACCOUNT_SIGNED_OUT' ? t('message.accountStopped') : t('message.turnError')}</span>
         <span className={css.turnErrorMessage}>{failureMessage(node.message, node.code, t)}</span>
+        <Tooltip label={t('message.resend')} side="bottom">
+          <button
+            type="button"
+            className={css.turnErrorResend}
+            aria-label={t('message.resend')}
+            disabled={disabled || draft.trim() !== ''}
+            onClick={onResend}
+          >
+            <IconRefreshOutlineRegular />
+          </button>
+        </Tooltip>
       </div>
       {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
     </div>
@@ -368,8 +398,18 @@ export const RetryNodeView = memo(function RetryNodeView({ node, t }: ChatNodeVi
 })
 
 /** Terminal turn-error keyed Chat renderer. */
-export const TurnErrorNodeView = memo(function TurnErrorNodeView({ node, t }: ChatNodeViewProps<'turn-error'>) {
-  return <TurnErrorItem node={node.data} t={t} />
+export const TurnErrorNodeView = memo(function TurnErrorNodeView({
+  node, useChat, useInput, inputActions, t,
+}: ChatNodeViewProps<'turn-error'>) {
+  return (
+    <TurnErrorItem
+      node={node.data}
+      useChat={useChat}
+      useInput={useInput}
+      inputActions={inputActions}
+      t={t}
+    />
+  )
 })
 
 /** Max-tokens turn-end notice keyed Chat renderer. */

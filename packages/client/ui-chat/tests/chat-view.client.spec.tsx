@@ -18,7 +18,7 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   ConversationGroupedView,
-  ConversationSnapshot, ConversationViewSnapshotStore, GroupKey, GroupSnapshot, NodeKey, TurnLocation,
+  ConversationSnapshot, ConversationViewSnapshotStore, GroupKey, GroupSnapshot, InputState, NodeKey, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
@@ -132,7 +132,7 @@ function makeSessionSource(init: Partial<TestSessionSnapshot> = {}) {
 type ChatSlice = Partial<LegacyConversationSlice> & {
   readonly turnUsages?: NonNullable<Parameters<typeof chatSnapshotFixture>[0]>['turnUsages']
 }
-type HarnessUpdate = ChatSlice & Partial<TestSessionSnapshot> & { readonly chat?: ChatSnapshot }
+type HarnessUpdate = ChatSlice & Partial<TestSessionSnapshot> & { readonly chat?: ChatSnapshot; readonly inputDraft?: string }
 
 /** Scripted Chat target source, independent from Session lifecycle state. */
 function makeChatSource(init: ChatSlice = {}, snapshot?: ChatSnapshot) {
@@ -428,7 +428,9 @@ function makeHarness(
       const inbox = useTestSession(snapshot => snapshot.testInbox)
       return key === 'inbox' ? inbox : outlineValue
     },
-    useInput: (() => { throw new Error('unused') }),
+    useInput: bindSnapshotSelector(createSnapshotStore<InputState>({
+      draft: init.inputDraft ?? '', draftRev: 0, phase: 'plain', draftSnapshot: '',
+    })),
     inputActions: {
       captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
       insertText: () => false,
@@ -2141,6 +2143,22 @@ describe('ChatView', () => {
     expect(view.queryByRole('alert')).toBeNull()
     expect(view.queryByRole('dialog')).toBeNull()
     expect(view.queryByRole('button', { name: '去充值' })).toBeNull()
+  })
+
+  it('resends the failed turn opening user message into an empty composer', () => {
+    const h = makeHarness({ nodes: [userInTurn(1, 'retry me', 1), turnError(2, 'AUTH')] })
+    const setDraft = vi.fn()
+    const view = render(<h.ChatView {...h.props} inputActions={{ ...h.props.inputActions, setDraft }} />)
+    fireEvent.click(view.getByRole('button', { name: '把本轮的用户消息放回输入框' }))
+    expect(setDraft).toHaveBeenCalledWith('retry me')
+  })
+
+  it('keeps the resend affordance disabled while the composer holds a draft', () => {
+    const h = makeHarness({ nodes: [userInTurn(1, 'retry me', 1), turnError(2, 'AUTH')], inputDraft: 'unsent text' })
+    const setDraft = vi.fn()
+    const view = render(<h.ChatView {...h.props} inputActions={{ ...h.props.inputActions, setDraft }} />)
+    expect(view.getByRole('button', { name: '把本轮的用户消息放回输入框' })).toHaveProperty('disabled', true)
+    expect(setDraft).not.toHaveBeenCalled()
   })
 
   it('renders the max-tokens notice with localized guidance, distinct from turn errors', () => {

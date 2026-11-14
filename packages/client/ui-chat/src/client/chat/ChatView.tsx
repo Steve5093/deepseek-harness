@@ -101,7 +101,7 @@ const ChatNodeList = memo(function ChatNodeList({ entries, useChatGroup, pending
 export function ChatView({
   useSession, useChat, useChatNode, useChatNodeProcess, useChatGroup, useConversation, useSessions, useStore, actions, renderSlot,
   sessionId, openFile, openSkill, openExternalLink, loadOlder, loadThrough, loadImage, inspectCall, chatScroll, forkAt, fileMentions,
-  usePresentation, useProjection, t,
+  usePresentation, useProjection, useInput, inputActions, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const groupedEntries = useConversation(snapshot => snapshot.views.grouped('chat')?.entries)
@@ -275,6 +275,9 @@ export function ChatView({
                 fileMentions={fileMentions}
                 renderSlot={renderSlot}
                 t={t}
+                useChat={useChat}
+                useInput={useInput}
+                inputActions={inputActions}
               />
             </MarkdownDelegateProvider>
             {running && <RunningStatus startTime={runningStartTime} t={t} />}
